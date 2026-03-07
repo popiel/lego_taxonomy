@@ -27,4 +27,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-http-testkit" % httpVersion % Test,
 
   "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,
-  "org.scalatest" %% "scalatest" % "3.2.15" % Test)
+  "org.scalatest" %% "scalatest" % "3.2.15" % Test,
+
+  // HTML parsing
+  "org.jsoup" % "jsoup" % "1.17.2")
