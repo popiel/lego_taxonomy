@@ -19,10 +19,11 @@ object HtmlParser {
     } else None
   }
 
-  def parseHtml(html: String, url: String): (List[Category], List[LegoPart]) = {
+  def parseHtml(url: String, html: String): (List[Category], List[LegoPart]) = {
     val doc = Jsoup.parse(html)
     val categories = mutable.Map[String, Category]()
     var categoryParents = List[Category]()
+    var parts = List[LegoPart]()   
 
     // Extract categories from navbar
     val navbar = doc.selectFirst("div.navbar")
@@ -58,16 +59,29 @@ object HtmlParser {
             val name = a.text().trim
             val cat = Category(number, name, Some(parent))
             categories(number) = cat
+            extractParts(div, cat)
             extractChildCategories(div, cat)
           }
         }
       }
     }
 
-    val inlineResults = doc.selectFirst("div.inlineresults")
-    extractChildCategories(inlineResults, mainCat)
+    // Extract parts from div.parts_results
+    def extractParts(element: Element, category: Category): Unit = {
+      for {
+        results <- element.children().asScala
+        if results.tagName() == "div" && results.classNames().contains("parts_results")
+        span <- results.select("span.td.part_name").asScala
+      } {
+        val partNumSpan = span.selectFirst("span.partnum")
+        val partNameSpan = span.selectFirst("span.partname")
+        val partNumber = if (partNumSpan != null) partNumSpan.text().trim else ""
+        val partName = if (partNameSpan != null) partNameSpan.text().trim else ""
+        val legoPart = LegoPart(partNumber, partName, getAncestors(category))
+        parts = legoPart :: parts
+      }
+    }
 
-    // Extract parts
     def getAncestors(cat: Category): List[Category] = {
       val visited = mutable.Set[Category]()
       val result = mutable.ListBuffer[Category]()
@@ -81,24 +95,9 @@ object HtmlParser {
       result.toList
     }
 
-    val partSpans = doc.select("span.td.part_name")
-    val parts = partSpans.asScala.map { span =>
-      val partNumSpan = span.selectFirst("span.partnum")
-      val partNameSpan = span.selectFirst("span.partname")
-      val partNumber = if (partNumSpan != null) partNumSpan.text().trim else ""
-      val partName = if (partNameSpan != null) partNameSpan.text().trim else ""
-      // Find enclosing div.part_category
-      val enclosingDiv = span.parents().asScala.find(p => p.tagName() == "div" && p.classNames().contains("part_category"))
-      val cats = enclosingDiv.flatMap { div =>
-        val firstA = div.selectFirst("a[href^='https://brickarchitect.com/parts/category']")
-        if (firstA != null) {
-          val href = firstA.attr("href")
-          getCategoryNumber(href).flatMap(num => categories.get(num).map(getAncestors))
-        } else None
-      }.getOrElse(List.empty)
-      LegoPart(partNumber, partName, cats)
-    }.toList
-
+    val inlineResults = doc.selectFirst("div.inlineresults")
+    extractParts(inlineResults, mainCat)
+    extractChildCategories(inlineResults, mainCat)
     (categories.values.toList, parts)
   }
 }

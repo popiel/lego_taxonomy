@@ -9,7 +9,7 @@ class HtmlParserSpec extends AnyFlatSpec with Matchers {
   "parseHtml" should "parse category-1.html correctly" in {
     val html = Source.fromFile("src/test/resources/category-1.html").mkString
     val url = "https://brickarchitect.com/parts/category-1?&retired=1&partstyle=1"
-    val (categories, parts) = HtmlParser.parseHtml(html, url)
+    val (categories, parts) = HtmlParser.parseHtml(url, html)
 
     // Check categories
     val basic = Category("1", "Basic", None)
