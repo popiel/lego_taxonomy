@@ -1,4 +1,4 @@
-=== Lego taxonomy sorting ===
+## Lego taxonomy sorting
 
 This is a tool to sort model parts lists
 according to the taxonomy in https://brickarchitect.com/parts/.
