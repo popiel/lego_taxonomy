@@ -21,3 +21,4 @@ _ajdump/
 .metals/
 .vs/
 .vscode/
+cache.json
