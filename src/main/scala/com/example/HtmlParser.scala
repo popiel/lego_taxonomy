@@ -83,6 +83,7 @@ object HtmlParser {
     }
 
     def getAncestors(cat: Category): List[Category] = {
+      @scala.annotation.tailrec
       def loop(current: Option[Category], acc: List[Category]): List[Category] = {
         current match {
           case Some(c) if !acc.contains(c) => loop(c.parent, c :: acc)
