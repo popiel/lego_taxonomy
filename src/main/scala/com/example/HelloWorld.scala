@@ -67,18 +67,18 @@ object HelloWorldMain {
     system ! HelloWorldMain.SayHello("Akka")
 
     // example of using the downloader actor
-    val downloader = system.systemActorOf(Downloader(), "downloader")
-    val probe = system.systemActorOf(Behaviors.receiveMessage[Downloader.Response] { msg =>
+    val downloader = system.systemActorOf(CachedDownloader(), "downloader")
+    val probe = system.systemActorOf(Behaviors.receiveMessage[CachedDownloader.Response] { msg =>
       msg match {
-        case Downloader.Downloaded(url, content) =>
+        case CachedDownloader.Downloaded(url, content) =>
           system.log.info("Downloaded {} bytes from {}", content.length, url)
-        case Downloader.Failed(url, reason) =>
-          system.log.warn("Failed to download {}: {}", url, reason)
+        case CachedDownloader.Failed(url, reason) =>
+          system.log.warn("Failed to download {}: {}", url, reason.getMessage)
       }
       Behaviors.stopped
     }, "probe")
 
-    downloader ! Downloader.Fetch("https://www.example.com", probe)
+    downloader ! CachedDownloader.Fetch("https://www.example.com", probe)
 
     Thread.sleep(3000)
     system.terminate()
