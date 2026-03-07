@@ -83,16 +83,13 @@ object HtmlParser {
     }
 
     def getAncestors(cat: Category): List[Category] = {
-      val visited = mutable.Set[Category]()
-      val result = mutable.ListBuffer[Category]()
-      var current: Option[Category] = Some(cat)
-      while (current.isDefined && !visited.contains(current.get)) {
-        val c = current.get
-        visited.add(c)
-        result += c
-        current = c.parent
+      def loop(current: Option[Category], acc: List[Category]): List[Category] = {
+        current match {
+          case Some(c) if !acc.contains(c) => loop(c.parent, c :: acc)
+          case _ => acc
+        }
       }
-      result.toList
+      loop(Some(cat), Nil)
     }
 
     val inlineResults = doc.selectFirst("div.inlineresults")
