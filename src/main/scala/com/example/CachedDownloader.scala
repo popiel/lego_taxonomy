@@ -18,7 +18,7 @@ object CachedDownloader {
 
   // internal messages
   private final case class CacheResponse(response: DiskCache.Response) extends Command
-  private final case class DownloadResponse(response: Downloader.Response, oldValue: Option[String] = None) extends Command
+  private final case class DownloadResponse(response: Downloader.Response, oldValue: String = "") extends Command
 
   private case class State(pending: Map[String, List[ActorRef[Response]]])
 
@@ -59,7 +59,7 @@ object CachedDownloader {
               } else {
                 // too old, do conditional download
                 val since = Some(DateTime(time))
-                val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, Some(value)))
+                val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, value))
                 downloader ! Downloader.Fetch(key, downloadAdapter, since)
                 Behaviors.same
               }
@@ -70,25 +70,23 @@ object CachedDownloader {
               Behaviors.same
           }
 
-        case DownloadResponse(downloadResp, oldValue) =>
-          val url = downloadResp match {
-            case Downloader.Downloaded(u, _) => u
-            case Downloader.NotChanged(u) => u
-            case Downloader.Failed(u, _) => u
-          }
+        case DownloadResponse(Downloader.Downloaded(url, content), _) =>
           val replyTos = state.pending(url)
-          downloadResp match {
-            case Downloader.Downloaded(_, content) =>
-              // cache it
-              cache ! DiskCache.Insert(url, content)
-              replyTos.foreach(_ ! Downloaded(url, content))
-            case Downloader.NotChanged(_) =>
-              // update the timestamp in cache
-              cache ! DiskCache.Insert(url, oldValue.getOrElse(""))
-              replyTos.foreach(_ ! Downloaded(url, oldValue.getOrElse("")))
-            case Downloader.Failed(_, reason) =>
-              replyTos.foreach(_ ! Failed(url, reason))
-          }
+          // cache it
+          cache ! DiskCache.Insert(url, content)
+          replyTos.foreach(_ ! Downloaded(url, content))
+          running(State(state.pending - url), downloader, cache)
+
+        case DownloadResponse(Downloader.NotChanged(url), oldValue) =>
+          val replyTos = state.pending(url)
+          // update the timestamp in cache
+          cache ! DiskCache.Insert(url, oldValue)
+          replyTos.foreach(_ ! Downloaded(url, oldValue))
+          running(State(state.pending - url), downloader, cache)
+
+        case DownloadResponse(Downloader.Failed(url, reason), _) =>
+          val replyTos = state.pending(url)
+          replyTos.foreach(_ ! Failed(url, reason))
           running(State(state.pending - url), downloader, cache)
       
       }
