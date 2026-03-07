@@ -43,6 +43,38 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
       }
     }
 
+    // new test verifying fresh-cache bypass
+    "return cached value without hitting network if recent" in {
+      val requestCount = new AtomicInteger(0)
+      val route: Route = path("fresh") {
+        get {
+          requestCount.incrementAndGet()
+          complete(HttpEntity("fresh"))
+        }
+      }
+      val binding = Await.result(Http()(testKit.system.classicSystem).newServerAt("localhost", 0).bind(route), 3.seconds)
+      val port = binding.localAddress.getPort
+
+      try {
+        val probe1 = createTestProbe[CachedDownloader.Response]()
+        val cachedDownloader = spawn(CachedDownloader())
+        val url = s"http://localhost:$port/fresh"
+
+        cachedDownloader ! CachedDownloader.Fetch(url, probe1.ref)
+        probe1.expectMessage(CachedDownloader.Downloaded(url, "fresh"))
+
+        // second fetch happens quickly, cache entry should be < 1h old
+        val probe2 = createTestProbe[CachedDownloader.Response]()
+        cachedDownloader ! CachedDownloader.Fetch(url, probe2.ref)
+        probe2.expectMessage(CachedDownloader.Downloaded(url, "fresh"))
+
+        // server should only have been contacted once
+        requestCount.get() should ===(1)
+      } finally {
+        Await.result(binding.unbind(), 3.seconds)
+      }
+    }
+
     "return NotChanged when server respects If-Modified-Since" in {
       val now = System.currentTimeMillis()
       val lastMod = DateTime(now - 1000) // 1 second ago

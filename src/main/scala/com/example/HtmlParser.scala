@@ -19,7 +19,26 @@ object HtmlParser {
     } else None
   }
 
-  def parseHtml(url: String, html: String): (List[Category], List[LegoPart]) = {
+  def parseRootHtml(html: String): List[Category] = {
+    val doc = Jsoup.parse(html)
+    var categories = List[Category]()
+    val inlineResults = doc.selectFirst("div.inlineresults")
+    if (inlineResults != null) {
+      val categoryDivs = inlineResults.select("div.categorylistitem").asScala
+      for {
+        div <- categoryDivs
+        a = div.selectFirst("a[href^='https://brickarchitect.com/parts/category']")
+        if a != null
+        number <- getCategoryNumber(a.attr("href"))
+      } {
+        val name = a.text().trim
+        categories = Category(number, name, None) :: categories
+      }
+    }
+    categories
+  }
+
+  def parseCategoryHtml(url: String, html: String): (List[Category], List[LegoPart]) = {
     val doc = Jsoup.parse(html)
     val categories = mutable.Map[String, Category]()
     var categoryParents = List[Category]()
@@ -51,18 +70,18 @@ object HtmlParser {
 
     // Extract child categories from div.part_category
     def extractChildCategories(element: Element, parent: Category): Unit = {
-      val childDivs = element.children().asScala.filter(e => e.tagName() == "div" && e.classNames().contains("part_category"))
-      childDivs.foreach { div =>
-        val a = div.selectFirst("a[href^='https://brickarchitect.com/parts/category']")
-        if (a != null) {
-          getCategoryNumber(a.attr("href")).foreach { number =>
-            val name = a.text().trim
-            val cat = Category(number, name, Some(parent))
-            categories(number) = cat
-            extractParts(div, cat)
-            extractChildCategories(div, cat)
-          }
-        }
+      for {
+        div <- element.children().asScala
+        if div.tagName() == "div" && div.classNames().contains("part_category")
+        a = div.selectFirst("a[href^='https://brickarchitect.com/parts/category']")
+        if a != null
+        number <- getCategoryNumber(a.attr("href"))
+      } {
+        val name = a.text().trim
+        val cat = Category(number, name, Some(parent))
+        categories(number) = cat
+        extractParts(div, cat)
+        extractChildCategories(div, cat)
       }
     }
 

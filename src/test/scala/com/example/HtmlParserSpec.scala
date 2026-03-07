@@ -5,11 +5,20 @@ import org.scalatest.matchers.should.Matchers
 import scala.io.Source
 
 class HtmlParserSpec extends AnyFlatSpec with Matchers {
+  "parseRootHtml" should "parse root.html correctly" in {
+    val html = Source.fromFile("src/test/resources/root.html").mkString
+    val categories = HtmlParser.parseRootHtml(html)
 
-  "parseHtml" should "parse category-1.html correctly" in {
+    categories should have size 12
+
+    categories should contain (Category("1", "BASIC", None))
+    categories should contain (Category("12", "TECHNIC", None))
+  }
+
+  "parseCategoryHtml" should "parse category-1.html correctly" in {
     val html = Source.fromFile("src/test/resources/category-1.html").mkString
     val url = "https://brickarchitect.com/parts/category-1?&retired=1&partstyle=1"
-    val (categories, parts) = HtmlParser.parseHtml(url, html)
+    val (categories, parts) = HtmlParser.parseCategoryHtml(url, html)
 
     // Check categories
     val basic = Category("1", "Basic", None)

@@ -49,14 +49,30 @@ object CachedDownloader {
           }
 
         case CacheResponse(cacheResp, url) =>
-          val since = cacheResp match {
+          // if we already have a cache entry inserted less than an hour ago, just return it
+          cacheResp match {
             case DiskCache.InsertionTime(time) =>
-              Some(DateTime(time))
-            case _ => None
+              val now = System.currentTimeMillis()
+              if (now - time < 3600000) {
+                // fresh, reply straight from cache
+                val replyTos = state.pending(url)
+                val valueAdapter = context.messageAdapter[DiskCache.Response](resp => CacheValueResponse(resp, url, replyTos))
+                cache ! DiskCache.GetValue(url, valueAdapter)
+                // remove pending and continue
+                running(State(state.pending - url), downloader, cache)
+              } else {
+                // too old, perform conditional download as before
+                val since = Some(DateTime(time))
+                val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, url))
+                downloader ! Downloader.Fetch(url, downloadAdapter, since)
+                Behaviors.same
+              }
+            case _ =>
+              // no cache entry, just download without condition
+              val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, url))
+              downloader ! Downloader.Fetch(url, downloadAdapter, None)
+              Behaviors.same
           }
-          val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, url))
-          downloader ! Downloader.Fetch(url, downloadAdapter, since)
-          Behaviors.same
 
         case DownloadResponse(downloadResp, url) =>
           val replyTos = state.pending(url)
@@ -83,7 +99,8 @@ object CachedDownloader {
               // should not happen, but reply failed
               replyTos.foreach(_ ! Failed(url, "Cache inconsistency"))
           }
-          Behaviors.same
+          // value request concludes the pending list for this url
+          running(State(state.pending - url), downloader, cache)
       }
     }.receiveSignal {
       case (_, _) => Behaviors.stopped
