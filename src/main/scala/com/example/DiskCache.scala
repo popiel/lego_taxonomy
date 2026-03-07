@@ -12,7 +12,7 @@ import scala.util.{Try, Success, Failure}
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-object CacheActor {
+object DiskCache {
   // JSON formats
   implicit val entryFormat: RootJsonFormat[CacheEntry] = jsonFormat3(CacheEntry)
 
