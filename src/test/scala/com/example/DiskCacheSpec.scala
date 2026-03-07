@@ -12,8 +12,11 @@ class DiskCacheSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val probe = createTestProbe[DiskCache.Response]()
 
       cache ! DiskCache.Insert("key1", "value1")
-      cache ! DiskCache.GetValue("key1", probe.ref)
-      probe.expectMessage(DiskCache.Value("value1"))
+      cache ! DiskCache.Fetch("key1", probe.ref)
+      val fetched = probe.expectMessageType[DiskCache.FetchResult]
+      fetched.key should ===("key1")
+      fetched.value should ===("value1")
+      // insertedAt already checked in next test
     }
 
     "insert and retrieve insertion time" in {
@@ -22,22 +25,19 @@ class DiskCacheSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
       val before = System.currentTimeMillis()
       cache ! DiskCache.Insert("key2", "value2")
-      cache ! DiskCache.GetInsertionTime("key2", probe.ref)
-      val response = probe.expectMessageType[DiskCache.InsertionTime]
+      cache ! DiskCache.Fetch("key2", probe.ref)
+      val response = probe.expectMessageType[DiskCache.FetchResult]
       val after = System.currentTimeMillis()
 
-      response.time should be >= before
-      response.time should be <= after
+      response.insertedAt should be >= before
+      response.insertedAt should be <= after
     }
 
     "return NotFound for non-existent key" in {
       val cache = spawn(DiskCache())
       val probe = createTestProbe[DiskCache.Response]()
 
-      cache ! DiskCache.GetValue("nonexistent", probe.ref)
-      probe.expectMessage(DiskCache.NotFound("nonexistent"))
-
-      cache ! DiskCache.GetInsertionTime("nonexistent", probe.ref)
+      cache ! DiskCache.Fetch("nonexistent", probe.ref)
       probe.expectMessage(DiskCache.NotFound("nonexistent"))
     }
   }

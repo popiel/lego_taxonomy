@@ -21,13 +21,11 @@ object DiskCache {
   // commands
   sealed trait Command
   final case class Insert(key: String, value: String) extends Command
-  final case class GetInsertionTime(key: String, replyTo: ActorRef[Response]) extends Command
-  final case class GetValue(key: String, replyTo: ActorRef[Response]) extends Command
+  final case class Fetch(key: String, replyTo: ActorRef[Response]) extends Command
 
   // responses
   sealed trait Response
-  final case class InsertionTime(time: Long) extends Response
-  final case class Value(value: String) extends Response
+  final case class FetchResult(key: String, value: String, insertedAt: Long) extends Response
   final case class NotFound(key: String) extends Response
 
   private val cacheDir = new File(".cache")
@@ -57,17 +55,10 @@ object DiskCache {
         context.log.info(s"Inserted key: $key")
         running(newCache)
 
-      case GetInsertionTime(key, replyTo) =>
+      case Fetch(key, replyTo) =>
         cache.get(key) match {
-          case Some(entry) => replyTo ! InsertionTime(entry.insertedAt)
-          case None => replyTo ! NotFound(key)
-        }
-        Behaviors.same
-
-      case GetValue(key, replyTo) =>
-        cache.get(key) match {
-          case Some(entry) => replyTo ! Value(entry.value)
-          case None => replyTo ! NotFound(key)
+          case Some(entry) => replyTo ! FetchResult(key, entry.value, entry.insertedAt)
+          case None          => replyTo ! NotFound(key)
         }
         Behaviors.same
     }

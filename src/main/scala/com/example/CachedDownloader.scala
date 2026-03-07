@@ -17,9 +17,8 @@ object CachedDownloader {
   final case class Failed(url: String, reason: String) extends Response
 
   // internal messages
-  private final case class CacheResponse(response: DiskCache.Response, url: String) extends Command
-  private final case class DownloadResponse(response: Downloader.Response, url: String) extends Command
-  private final case class CacheValueResponse(response: DiskCache.Response, url: String, replyTos: List[ActorRef[Response]]) extends Command
+  private final case class CacheResponse(response: DiskCache.Response) extends Command
+  private final case class DownloadResponse(response: Downloader.Response, oldValue: Option[String] = None) extends Command
 
   private case class State(pending: Map[String, List[ActorRef[Response]]])
 
@@ -43,38 +42,40 @@ object CachedDownloader {
             case None =>
               // start new fetch
               val newPending = state.pending + (url -> List(replyTo))
-              val cacheAdapter = context.messageAdapter[DiskCache.Response](resp => CacheResponse(resp, url))
-              cache ! DiskCache.GetInsertionTime(url, cacheAdapter)
+              val cacheAdapter = context.messageAdapter[DiskCache.Response](resp => CacheResponse(resp))
+              cache ! DiskCache.Fetch(url, cacheAdapter)
               running(State(newPending), downloader, cache)
           }
 
-        case CacheResponse(cacheResp, url) =>
-          // if we already have a cache entry inserted less than an hour ago, just return it
+        case CacheResponse(cacheResp) =>
           cacheResp match {
-            case DiskCache.InsertionTime(time) =>
+            case DiskCache.FetchResult(key, value, time) =>
               val now = System.currentTimeMillis()
+              val replyTos = state.pending(key)
               if (now - time < 3600000) {
-                // fresh, reply straight from cache
-                val replyTos = state.pending(url)
-                val valueAdapter = context.messageAdapter[DiskCache.Response](resp => CacheValueResponse(resp, url, replyTos))
-                cache ! DiskCache.GetValue(url, valueAdapter)
-                // remove pending and continue
-                running(State(state.pending - url), downloader, cache)
+                // fresh, reply directly
+                replyTos.foreach(_ ! Downloaded(key, value))
+                running(State(state.pending - key), downloader, cache)
               } else {
-                // too old, perform conditional download as before
+                // too old, do conditional download
                 val since = Some(DateTime(time))
-                val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, url))
-                downloader ! Downloader.Fetch(url, downloadAdapter, since)
+                val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, Some(value)))
+                downloader ! Downloader.Fetch(key, downloadAdapter, since)
                 Behaviors.same
               }
-            case _ =>
-              // no cache entry, just download without condition
-              val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp, url))
-              downloader ! Downloader.Fetch(url, downloadAdapter, None)
+            case DiskCache.NotFound(key) =>
+              // no cache entry, just download
+              val downloadAdapter = context.messageAdapter[Downloader.Response](resp => DownloadResponse(resp))
+              downloader ! Downloader.Fetch(key, downloadAdapter, None)
               Behaviors.same
           }
 
-        case DownloadResponse(downloadResp, url) =>
+        case DownloadResponse(downloadResp, oldValue) =>
+          val url = downloadResp match {
+            case Downloader.Downloaded(u, _) => u
+            case Downloader.NotChanged(u) => u
+            case Downloader.Failed(u, _) => u
+          }
           val replyTos = state.pending(url)
           downloadResp match {
             case Downloader.Downloaded(_, content) =>
@@ -82,25 +83,14 @@ object CachedDownloader {
               cache ! DiskCache.Insert(url, content)
               replyTos.foreach(_ ! Downloaded(url, content))
             case Downloader.NotChanged(_) =>
-              // get the cached value
-              val valueAdapter = context.messageAdapter[DiskCache.Response](resp => CacheValueResponse(resp, url, replyTos))
-              cache ! DiskCache.GetValue(url, valueAdapter)
+              // update the timestamp in cache
+              cache ! DiskCache.Insert(url, oldValue.getOrElse(""))
+              replyTos.foreach(_ ! Downloaded(url, oldValue.getOrElse("")))
             case Downloader.Failed(_, reason) =>
               replyTos.foreach(_ ! Failed(url, reason))
           }
-          val newPending = state.pending - url
-          running(State(newPending), downloader, cache)
-
-        case CacheValueResponse(cacheResp, url, replyTos) =>
-          cacheResp match {
-            case DiskCache.Value(content) =>
-              replyTos.foreach(_ ! Downloaded(url, content))
-            case _ =>
-              // should not happen, but reply failed
-              replyTos.foreach(_ ! Failed(url, "Cache inconsistency"))
-          }
-          // value request concludes the pending list for this url
           running(State(state.pending - url), downloader, cache)
+      
       }
     }.receiveSignal {
       case (_, _) => Behaviors.stopped
