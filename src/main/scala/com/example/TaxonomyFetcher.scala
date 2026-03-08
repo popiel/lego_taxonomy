@@ -30,12 +30,14 @@ object TaxonomyFetcher {
     idle(downloader, cache)
   }
 
+  val rootUrl = "https://brickarchitect.com/parts/?&retired=1&partstyle=1"
+
   def idle(downloader: ActorRef[CachedDownloader.Command], cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.receive { (context, message) =>
     message match {
       case GetTaxonomy(replyTo) =>
         // start root fetch using ask to handle potential failures
         context.ask(downloader, (ref: ActorRef[CachedDownloader.Response]) =>
-          CachedDownloader.Fetch("https://brickarchitect.com/parts/?&retired=1&partstyle=1", ref)
+          CachedDownloader.Fetch(rootUrl, ref)
         ) {
           case scala.util.Success(resp) => FetchResponse(resp)
           case scala.util.Failure(ex)     => AskFailure(ex)
@@ -49,7 +51,7 @@ object TaxonomyFetcher {
   def collecting(state: State, downloader: ActorRef[CachedDownloader.Command], cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.receive { (context, message) =>
     message match {
       case FetchResponse(CachedDownloader.Downloaded(url, content)) =>
-        if (url == "https://brickarchitect.com/parts/?&retired=1&partstyle=1") {
+        if (url == rootUrl) {
           val cats = HtmlParser.parseRootHtml(content)
           context.log.info(s"Fetched root with ${cats.size} categories")
           cats.foreach { cat =>
