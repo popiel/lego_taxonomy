@@ -21,4 +21,5 @@ _ajdump/
 .metals/
 .vs/
 .vscode/
-cache.json
+categories.csv
+parts.csv
