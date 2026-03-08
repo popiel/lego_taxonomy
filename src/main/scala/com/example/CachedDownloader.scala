@@ -28,9 +28,8 @@ object CachedDownloader {
   private case class PendingInfo(replyTos: List[ActorRef[Response]], oldValue: String)
   private case class State(pending: Map[String, PendingInfo])
 
-  def apply(): Behavior[Command] = Behaviors.setup { context =>
+  def apply(cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.setup { context =>
     val downloader = context.spawn(Downloader(), "downloader")
-    val cache = context.spawn(DiskCache(), "cache")
 
     running(State(Map.empty), downloader, cache)
   }

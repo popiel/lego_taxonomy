@@ -28,7 +28,8 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
 
       try {
         val probe = createTestProbe[CachedDownloader.Response]()
-        val cachedDownloader = spawn(CachedDownloader())
+        val cache = spawn(DiskCache())
+        val cachedDownloader = spawn(CachedDownloader(cache))
         cachedDownloader ! CachedDownloader.Fetch(s"http://localhost:$port/test", probe.ref)
         probe.expectMessage(CachedDownloader.Downloaded(s"http://localhost:$port/test", "content"))
 
@@ -57,7 +58,8 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
 
       try {
         val probe1 = createTestProbe[CachedDownloader.Response]()
-        val cachedDownloader = spawn(CachedDownloader())
+        val cache = spawn(DiskCache())
+        val cachedDownloader = spawn(CachedDownloader(cache))
         val url = s"http://localhost:$port/fresh"
 
         cachedDownloader ! CachedDownloader.Fetch(url, probe1.ref)
@@ -97,7 +99,8 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
 
       try {
         val probe = createTestProbe[CachedDownloader.Response]()
-        val cachedDownloader = spawn(CachedDownloader())
+        val cache = spawn(DiskCache())
+        val cachedDownloader = spawn(CachedDownloader(cache))
         // first fetch
         cachedDownloader ! CachedDownloader.Fetch(s"http://localhost:$port/cached", probe.ref)
         probe.expectMessage(CachedDownloader.Downloaded(s"http://localhost:$port/cached", "fresh"))
@@ -123,7 +126,8 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
       try {
         val probe1 = createTestProbe[CachedDownloader.Response]()
         val probe2 = createTestProbe[CachedDownloader.Response]()
-        val cachedDownloader = spawn(CachedDownloader())
+        val cache = spawn(DiskCache())
+        val cachedDownloader = spawn(CachedDownloader(cache))
         cachedDownloader ! CachedDownloader.Fetch(s"http://localhost:$port/multi", probe1.ref)
         cachedDownloader ! CachedDownloader.Fetch(s"http://localhost:$port/multi", probe2.ref)
         probe1.expectMessage(CachedDownloader.Downloaded(s"http://localhost:$port/multi", "shared content"))
@@ -148,7 +152,8 @@ class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLik
         val probe1 = createTestProbe[CachedDownloader.Response]()
         val probe2 = createTestProbe[CachedDownloader.Response]()
         val probe3 = createTestProbe[CachedDownloader.Response]()
-        val cachedDownloader = spawn(CachedDownloader())
+        val cache = spawn(DiskCache())
+        val cachedDownloader = spawn(CachedDownloader(cache))
         val url = s"http://localhost:$port/single"
         cachedDownloader ! CachedDownloader.Fetch(url, probe1.ref)
         cachedDownloader ! CachedDownloader.Fetch(url, probe2.ref)
