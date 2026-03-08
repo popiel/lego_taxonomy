@@ -92,11 +92,12 @@ object HtmlParser {
         results <- element.children().asScala
         if results.tagName() == "div" && results.classNames().contains("parts_results")
         span <- results.select("span.td.part_name").asScala
+        partNumSpan = span.selectFirst("span.partnum")
+        partNameSpan = span.selectFirst("span.partname")
+        if partNumSpan != null && partNameSpan != null
       } {
-        val partNumSpan = span.selectFirst("span.partnum")
-        val partNameSpan = span.selectFirst("span.partname")
-        val partNumber = if (partNumSpan != null) partNumSpan.text().trim else ""
-        val partName = if (partNameSpan != null) partNameSpan.text().trim else ""
+        val partNumber = partNumSpan.text().trim
+        val partName = partNameSpan.text().trim
         val legoPart = LegoPart(partNumber, partName, getAncestors(category))
         parts = legoPart :: parts
       }

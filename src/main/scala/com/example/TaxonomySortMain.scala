@@ -11,7 +11,7 @@ import scala.concurrent.duration.Duration
 
 
 //#hello-world-main
-object HelloWorldMain {
+object TaxonomySortMain {
 
   //#hello-world-main
   def main(args: Array[String]): Unit = {
