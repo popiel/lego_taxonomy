@@ -96,8 +96,4 @@ object TaxonomyFetcher {
         Behaviors.unhandled
     }
   }
-
-  def getParentChain(cat: Category): List[String] = cat.number :: cat.parent.map(getParentChain).getOrElse(Nil)
-
-  def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s""""${s.replace("\"", "\"\"")}""" else s
 }
