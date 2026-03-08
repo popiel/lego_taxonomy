@@ -25,6 +25,9 @@ object HelloWorldMain {
           writeToFile("parts.csv", partCsv)
           system.log.info("CSVs written to files, terminating system")
           system.terminate()
+        case TaxonomyFetcher.Failed(reason) =>
+          system.log.error(s"taxonomy fetch failed: ${reason.getMessage}", reason)
+          system.terminate()
       }
       Behaviors.stopped
     }, "probe")
@@ -48,7 +51,7 @@ object HelloWorldMain {
 
   def buildPartsCsv(parts: List[LegoPart]): String = {
     val header = "partNumber,name,category,category2,category3,category4\n"
-    val sortedParts = parts.sortWith { (a, b) =>
+    val sortedParts = parts.filter(_.name != "").sortWith { (a, b) =>
       val aCats = a.categories.map(_.number.toInt)
       val bCats = b.categories.map(_.number.toInt)
       val minLen = math.min(aCats.length, bCats.length)
@@ -56,13 +59,13 @@ object HelloWorldMain {
       cmp < 0
     }
     val rows = sortedParts.map { part =>
-      val catNums = part.categories.map(_.number)
-      s"${part.partNumber},${escapeCsv(part.name)},${catNums.headOption.getOrElse("")},${catNums.lift(1).getOrElse("")},${catNums.lift(2).getOrElse("")},${catNums.lift(3).getOrElse("")}"
+      val catNames = part.categories.map(_.name)
+      s"${part.partNumber},${escapeCsv(part.name)},${catNames.headOption.getOrElse("")},${catNames.lift(1).getOrElse("")},${catNames.lift(2).getOrElse("")},${catNames.lift(3).getOrElse("")}"
     }.mkString("\n")
     header + rows
   }
 
-  def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s""""${s.replace("\"", "\"\"")}""" else s
+  def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
   def writeToFile(filename: String, content: String): Unit = {
     import java.nio.file.{Files, Paths}

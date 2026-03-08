@@ -64,6 +64,7 @@ object HtmlParser {
     val mainNumber = mainNumberOpt.getOrElse("1")
     val h1 = doc.selectFirst("div.main h1")
     val mainName = h1.ownText().trim()
+    println(s"Main category: $mainNumber - $mainName from URL $url")
     val mainCat = Category(mainNumber, mainName, categoryParents.headOption)
     categories(mainNumber) = mainCat
     categoryParents = mainCat :: categoryParents

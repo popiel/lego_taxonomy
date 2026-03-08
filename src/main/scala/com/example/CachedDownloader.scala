@@ -60,6 +60,7 @@ object CachedDownloader {
               val info = state.pending(key)
               if (now - time < 3600000) {
                 // fresh, reply directly
+                context.log.info(s"Cache hit for $key, inserted at ${DateTime(time)}, replying to ${info.replyTos.size} request(s)")
                 info.replyTos.foreach(_ ! Downloaded(key, value))
                 running(State(state.pending - key), downloader, cache)
               } else {
