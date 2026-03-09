@@ -66,7 +66,7 @@ object CachedDownloader {
                   case DiskCache.FetchResult(key, value, time) =>
                     val now = System.currentTimeMillis()
                     if (now - time < 3600000) {
-                      scala.concurrent.Future.successful(Downloaded(key, value))
+                      Future.successful(Downloaded(key, value))
                     } else {
                       networkFetch(Some(DateTime(time)), Some(value))
                     }
