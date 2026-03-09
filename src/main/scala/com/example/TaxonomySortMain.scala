@@ -10,10 +10,8 @@ import scala.concurrent.duration.Duration
 //#imports
 
 
-//#hello-world-main
 object TaxonomySortMain {
 
-  //#hello-world-main
   def main(args: Array[String]): Unit = {
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
     val probe = system.systemActorOf(Behaviors.receiveMessage[TaxonomyFetcher.Response] { msg =>
@@ -72,6 +70,4 @@ object TaxonomySortMain {
     Files.write(Paths.get(filename), content.getBytes)
   }
 
-  //#hello-world-main
 }
-//#hello-world-main
