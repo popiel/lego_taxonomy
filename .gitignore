@@ -23,3 +23,5 @@ _ajdump/
 .vscode/
 categories.csv
 parts.csv
+src/test/resources/*-sorted.csv
+src/test/resources/simple/

@@ -62,7 +62,7 @@ object TaxonomySortMain {
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
   def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
-    val partMap = taxonomyParts.groupBy(_.partNumber).mapValues(_.head).toMap
+    val partMap = taxonomyParts.flatMap(part => (part.partNumber :: part.altNumbers.toList).map(_ -> part)).toMap
     for (file <- files) {
       if (file.endsWith(".csv")) {
         val coloredParts = new CsvReader().readColoredParts(file)

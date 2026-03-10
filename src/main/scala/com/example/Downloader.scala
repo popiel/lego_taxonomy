@@ -27,6 +27,7 @@ object Downloader {
   private final case class WrappedResult(url: String, content: String, replyTo: ActorRef[Response]) extends Command
   private final case class WrappedNotChanged(url: String, replyTo: ActorRef[Response]) extends Command
   private final case class WrappedFailure(url: String, cause: Throwable, replyTo: ActorRef[Response]) extends Command
+  private final case object NoOp extends Command
 
   // responses we send back
   sealed trait Response
@@ -34,24 +35,31 @@ object Downloader {
   final case class NotChanged(url: String) extends Response
   final case class Failed(url: String, reason: String) extends Response
 
-  def apply(): Behavior[Command] = Behaviors.setup { context =>
-    implicit val ec = context.executionContext
+  def apply(retryInterval: FiniteDuration = 60.seconds): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
+    Behaviors.setup { context =>
+      implicit val ec = context.executionContext
+      val retryIntervalValue = retryInterval
 
-    Behaviors.receiveMessage {
-      case Fetch(url, replyTo, since) =>
-        // use akka-http to perform the request, attaching header if requested
+      def scheduleRetry(url: String, replyTo: ActorRef[Response], since: Option[DateTime]): Command = {
+        context.log.warn(s"Received 429, waiting $retryIntervalValue before retrying $url")
+        val retryMsg: Command = Fetch(url, replyTo, since)
+        timers.startSingleTimer(s"retry-$url", retryMsg, retryIntervalValue)
+        NoOp
+      }
+
+      def fetchUrl(url: String, replyTo: ActorRef[Response], since: Option[DateTime]): Unit = {
         implicit val system = context.system
         val request = since match {
           case Some(date) => HttpRequest(uri = url).withHeaders(`If-Modified-Since`(date))
           case None       => HttpRequest(uri = url)
         }
-        // timeout for entity toStrict
-        val timeout = 5.seconds
         val responseFuture = Http(context.system.classicSystem)
           .singleRequest(request)
           .flatMap { res =>
             if (res.status == StatusCodes.NotModified) {
               Future.successful(Left(()))
+            } else if (res.status == StatusCodes.TooManyRequests) {
+              Future.failed(new TooManyRequestsException)
             } else if (res.status.isSuccess()) {
               Unmarshal(res.entity).to[String].map(Right(_))
             } else {
@@ -62,21 +70,33 @@ object Downloader {
         context.pipeToSelf(responseFuture) {
           case scala.util.Success(Right(content)) => WrappedResult(url, content, replyTo)
           case scala.util.Success(Left(_))        => WrappedNotChanged(url, replyTo)
+          case scala.util.Failure(ex: TooManyRequestsException) => scheduleRetry(url, replyTo, since)
           case scala.util.Failure(ex)              => WrappedFailure(url, ex, replyTo)
         }
-        Behaviors.same
+      }
 
-      case WrappedResult(url, content, replyTo) =>
-        replyTo ! Downloaded(url, content)
-        Behaviors.same
+      Behaviors.receiveMessage {
+        case Fetch(url, replyTo, since) =>
+          fetchUrl(url, replyTo, since)
+          Behaviors.same
 
-      case WrappedNotChanged(url, replyTo) =>
-        replyTo ! NotChanged(url)
-        Behaviors.same
+        case WrappedResult(url, content, replyTo) =>
+          replyTo ! Downloaded(url, content)
+          Behaviors.same
 
-      case WrappedFailure(url, cause, replyTo) =>
-        replyTo ! Failed(url, cause.getMessage)
-        Behaviors.same
+        case WrappedNotChanged(url, replyTo) =>
+          replyTo ! NotChanged(url)
+          Behaviors.same
+
+        case WrappedFailure(url, cause, replyTo) =>
+          replyTo ! Failed(url, cause.getMessage)
+          Behaviors.same
+
+        case NoOp =>
+          Behaviors.same
+      }
     }
   }
+
+  private class TooManyRequestsException extends RuntimeException("HTTP 429")
 }

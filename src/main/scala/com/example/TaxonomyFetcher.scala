@@ -20,7 +20,7 @@ object TaxonomyFetcher {
   private case class FetchResponse(response: CachedDownloader.Response) extends Command
   private case class AskFailure(ex: Throwable) extends Command
 
-  private case class State(allCategories: Set[Category], allParts: List[LegoPart], pendingFetches: Int, replyTo: ActorRef[Response])
+  private case class State(allCategories: Set[Category], allParts: List[LegoPart], pendingFetches: Int, replyTo: ActorRef[Response], remainingParts: List[LegoPart] = Nil)
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = CachedDownloader.timeout
@@ -77,7 +77,9 @@ object TaxonomyFetcher {
           val newState = State(newCats, newParts, newPending, state.replyTo)
           if (newPending == 0) {
             context.log.info(s"Starting to enhance ${newParts.size} parts")
-            newParts.foreach { part =>
+            val batch = newParts.take(10)
+            val remaining = newParts.drop(10)
+            batch.foreach { part =>
               val partUrl = s"https://brickarchitect.com/parts/${part.partNumber}?&retired=1&partstyle=1"
               context.ask(downloader, (ref: ActorRef[CachedDownloader.Response]) =>
                 CachedDownloader.Fetch(partUrl, ref)
@@ -86,7 +88,7 @@ object TaxonomyFetcher {
                 case scala.util.Failure(ex)     => AskFailure(ex)
               }
             }
-            val enhanceState = State(newCats, newParts, newParts.size, state.replyTo)
+            val enhanceState = State(newCats, newParts, batch.size, state.replyTo, remaining)
             enhanceParts(enhanceState, downloader, cache)
           } else {
             collecting(newState, downloader, cache)
@@ -125,11 +127,29 @@ object TaxonomyFetcher {
         val newPending = state.pendingFetches - 1
         context.log.info(s"Enhanced part $partNum, ${newPending} parts remaining")
 
-        val newState = State(state.allCategories, enhancedParts, newPending, state.replyTo)
         if (newPending == 0) {
-          state.replyTo ! TaxonomyFetched(state.allCategories, enhancedParts)
-          idle(downloader, cache)
+          if (state.remainingParts.isEmpty) {
+            context.log.info(s"All parts enhanced, completing")
+            state.replyTo ! TaxonomyFetched(state.allCategories, enhancedParts)
+            idle(downloader, cache)
+          } else {
+            context.log.info(s"Starting next batch, ${state.remainingParts.size} parts remaining")
+            val batch = state.remainingParts.take(10)
+            val remaining = state.remainingParts.drop(10)
+            batch.foreach { part =>
+              val partUrl = s"https://brickarchitect.com/parts/${part.partNumber}?&retired=1&partstyle=1"
+              context.ask(downloader, (ref: ActorRef[CachedDownloader.Response]) =>
+                CachedDownloader.Fetch(partUrl, ref)
+              ) {
+                case scala.util.Success(resp) => FetchResponse(resp)
+                case scala.util.Failure(ex)     => AskFailure(ex)
+              }
+            }
+            val newState = State(state.allCategories, enhancedParts, batch.size, state.replyTo, remaining)
+            enhanceParts(newState, downloader, cache)
+          }
         } else {
+          val newState = State(state.allCategories, enhancedParts, newPending, state.replyTo, state.remainingParts)
           enhanceParts(newState, downloader, cache)
         }
 
