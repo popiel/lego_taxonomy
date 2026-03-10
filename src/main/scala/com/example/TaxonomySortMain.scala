@@ -32,7 +32,7 @@ object TaxonomySortMain {
 
     system ! TaxonomyFetcher.GetTaxonomy(probe)
 
-    Await.result(system.whenTerminated, Duration.Inf)
+    Await.result(system.whenTerminated, Duration("2 minutes"))
     System.exit(0)
   }
 
