@@ -21,7 +21,9 @@ object TaxonomySortMain {
           val partCsv = buildPartsCsv(parts)
           writeToFile("categories.csv", catCsv)
           writeToFile("parts.csv", partCsv)
-          system.log.info("CSVs written to files, terminating system")
+          system.log.info("CSVs written to files, now processing inventories")
+          processInventories(parts, args)
+          system.log.info("Inventories processed, terminating system")
           system.terminate()
         case TaxonomyFetcher.Failed(reason) =>
           system.log.error(s"taxonomy fetch failed: ${reason.getMessage}", reason)
@@ -49,13 +51,7 @@ object TaxonomySortMain {
 
   def buildPartsCsv(parts: List[LegoPart]): String = {
     val header = "partNumber,name,category,category2,category3,category4\n"
-    val sortedParts = parts.filter(_.name != "").sortWith { (a, b) =>
-      val aCats = a.categories.map(_.number.toInt)
-      val bCats = b.categories.map(_.number.toInt)
-      val minLen = math.min(aCats.length, bCats.length)
-      val cmp = (0 until minLen).view.map(i => aCats(i).compare(bCats(i))).find(_ != 0).getOrElse(aCats.length.compare(bCats.length))
-      cmp < 0
-    }
+    val sortedParts = parts.filter(_.name != "").sorted
     val rows = sortedParts.map { part =>
       val catNames = part.categories.map(_.name)
       s"${part.partNumber},${escapeCsv(part.name)},${catNames.headOption.getOrElse("")},${catNames.lift(1).getOrElse("")},${catNames.lift(2).getOrElse("")},${catNames.lift(3).getOrElse("")}"
@@ -64,6 +60,40 @@ object TaxonomySortMain {
   }
 
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
+
+  def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
+    val partMap = taxonomyParts.groupBy(_.partNumber).mapValues(_.head)
+    for (file <- files) {
+      if (file.endsWith(".csv")) {
+        val coloredParts = new CsvReader().readColoredParts(file)
+        val sortedParts = coloredParts.sortWith { (a, b) =>
+          val aPart = partMap.get(a.partNumber)
+          val bPart = partMap.get(b.partNumber)
+          val partCmp = (aPart, bPart) match {
+            case (Some(ap), Some(bp)) => ap.compare(bp)
+            case (Some(_), None) => -1
+            case (None, Some(_)) => 1
+            case (None, None) => a.partNumber.compare(b.partNumber)
+          }
+          if (partCmp != 0) partCmp < 0
+          else {
+            val colorCmp = a.color.compare(b.color)
+            if (colorCmp != 0) colorCmp < 0
+            else a.quantity.compare(b.quantity) < 0
+          }
+        }
+        val outputFile = file.replace(".csv", "-sorted.csv")
+        val header = "quantity,color,partNumber,name,category,category2,category3,category4\n"
+        val rows = sortedParts.map { cp =>
+          val legoPart = partMap.get(cp.partNumber)
+          val name = legoPart.map(_.name).getOrElse("")
+          val catNames = legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
+          s"${cp.quantity},${escapeCsv(cp.color)},${cp.partNumber},${escapeCsv(name)},${catNames.headOption.getOrElse("")},${catNames.lift(1).getOrElse("")},${catNames.lift(2).getOrElse("")},${catNames.lift(3).getOrElse("")}"
+        }.mkString("\n")
+        writeToFile(outputFile, header + rows)
+      }
+    }
+  }
 
   def writeToFile(filename: String, content: String): Unit = {
     import java.nio.file.{Files, Paths}

@@ -40,4 +40,19 @@ class HtmlParserSpec extends AnyFlatSpec with Matchers {
     part2.get.name shouldBe "6×6 Tile"
     part2.get.categories.map(_.number) should contain allOf ("1", "18", "38")
   }
+
+  it should "populate sequence numbers in extraction order" in {
+    val html = Source.fromFile("src/test/resources/category-1.html").mkString
+    val url = "https://brickarchitect.com/parts/category-1"
+    val (_, parts) = HtmlParser.parseCategoryHtml(url, html)
+
+    val sortedBySeq = parts.sortBy(_.sequenceNumber)
+    sortedBySeq.map(_.partNumber).distinct.length shouldBe sortedBySeq.length
+
+    val firstPart = sortedBySeq.head
+    firstPart.sequenceNumber should be > 0
+
+    val lastPart = sortedBySeq.last
+    lastPart.sequenceNumber should be > firstPart.sequenceNumber
+  }
 }

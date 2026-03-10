@@ -42,7 +42,7 @@ object HtmlParser {
     val doc = Jsoup.parse(html)
     val categories = mutable.Map[String, Category]()
     var categoryParents = List[Category]()
-    var parts = List[LegoPart]()   
+    var parts = List[LegoPart]()
 
     // Extract categories from navbar
     val navbar = doc.selectFirst("div.navbar")
@@ -88,6 +88,7 @@ object HtmlParser {
 
     // Extract parts from div.parts_results
     def extractParts(element: Element, category: Category): Unit = {
+      var sequenceNumber = 0   
       for {
         results <- element.children().asScala
         if results.tagName() == "div" && results.classNames().contains("parts_results")
@@ -98,20 +99,10 @@ object HtmlParser {
       } {
         val partNumber = partNumSpan.text().trim
         val partName = partNameSpan.text().trim
-        val legoPart = LegoPart(partNumber, partName, getAncestors(category))
+        sequenceNumber += 1
+        val legoPart = LegoPart(partNumber, partName, category.hierarchy, sequenceNumber)
         parts = legoPart :: parts
       }
-    }
-
-    def getAncestors(cat: Category): List[Category] = {
-      @scala.annotation.tailrec
-      def loop(current: Option[Category], acc: List[Category]): List[Category] = {
-        current match {
-          case Some(c) if !acc.contains(c) => loop(c.parent, c :: acc)
-          case _ => acc
-        }
-      }
-      loop(Some(cat), Nil)
     }
 
     val inlineResults = doc.selectFirst("div.inlineresults")
