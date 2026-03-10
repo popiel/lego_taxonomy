@@ -55,4 +55,16 @@ class HtmlParserSpec extends AnyFlatSpec with Matchers {
     val lastPart = sortedBySeq.last
     lastPart.sequenceNumber should be > firstPart.sequenceNumber
   }
+
+  "enhancePart" should "populate altNumbers from HTML" in {
+    val html = Source.fromFile("src/test/resources/part-3069.html").mkString
+    val part = LegoPart("3069", "1x2 Tile", Nil, 1, Set())
+    val enhanced = HtmlParser.enhancePart(part, html)
+
+    enhanced.altNumbers should contain ("3069a")
+    enhanced.altNumbers should contain ("3069b")
+    enhanced.altNumbers should contain ("30070")
+    enhanced.altNumbers should contain ("37293")
+    enhanced.altNumbers should not contain ("3069")
+  }
 }

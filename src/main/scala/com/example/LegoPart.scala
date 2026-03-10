@@ -1,6 +1,12 @@
 package com.example
 
-case class LegoPart(partNumber: String, name: String, categories: List[Category], sequenceNumber: Int = 0) extends Ordered[LegoPart] {
+case class LegoPart(
+  partNumber: String,
+  name: String,
+  categories: List[Category],
+  sequenceNumber: Int = 0,
+  altNumbers: Set[String] = Set.empty
+) extends Ordered[LegoPart] {
   def compare(that: LegoPart): Int = {
     val aCats = this.categories.map(_.number.toInt)
     val bCats = that.categories.map(_.number.toInt)

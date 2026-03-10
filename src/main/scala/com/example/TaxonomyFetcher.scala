@@ -66,7 +66,7 @@ object TaxonomyFetcher {
           }
           val newState = state.copy(pendingFetches = state.pendingFetches - 1 + cats.size)
           collecting(newState, downloader, cache)
-        } else {
+        } else if (url.startsWith("https://brickarchitect.com/parts/category-")) {
           val (cats, parts) = HtmlParser.parseCategoryHtml(url, content)
           val newCats = state.allCategories ++ cats
           val newParts = state.allParts ++ parts
@@ -76,16 +76,28 @@ object TaxonomyFetcher {
 
           val newState = State(newCats, newParts, newPending, state.replyTo)
           if (newPending == 0) {
-            state.replyTo ! TaxonomyFetched(newCats, newParts)
-            idle(downloader, cache)
+            context.log.info(s"Starting to enhance ${newParts.size} parts")
+            newParts.foreach { part =>
+              val partUrl = s"https://brickarchitect.com/parts/${part.partNumber}?&retired=1&partstyle=1"
+              context.ask(downloader, (ref: ActorRef[CachedDownloader.Response]) =>
+                CachedDownloader.Fetch(partUrl, ref)
+              ) {
+                case scala.util.Success(resp) => FetchResponse(resp)
+                case scala.util.Failure(ex)     => AskFailure(ex)
+              }
+            }
+            val enhanceState = State(newCats, newParts, newParts.size, state.replyTo)
+            enhanceParts(enhanceState, downloader, cache)
           } else {
             collecting(newState, downloader, cache)
           }
+        } else {
+          collecting(state, downloader, cache)
         }
 
       case FetchResponse(CachedDownloader.Failed(_, reason)) =>
         // propagate failure immediately and abandon further work
-        context.log.error(s"download failed: $reason")
+        context.log.error(s"download failed: ${reason}")
         state.replyTo ! Failed(reason)
         idle(downloader, cache)
 
@@ -95,6 +107,43 @@ object TaxonomyFetcher {
         idle(downloader, cache)
       case GetTaxonomy(_) =>
         // ignore additional requests while already collecting
+        Behaviors.unhandled
+    }
+  }
+
+  def enhanceParts(state: State, downloader: ActorRef[CachedDownloader.Command], cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.receive { (context, message) =>
+    message match {
+      case FetchResponse(CachedDownloader.Downloaded(url, content)) =>
+        val partNum = url.substring("https://brickarchitect.com/parts/".length).split("\\?")(0)
+        val enhancedParts = state.allParts.map { part =>
+          if (part.partNumber == partNum) {
+            HtmlParser.enhancePart(part, content)
+          } else {
+            part
+          }
+        }
+        val newPending = state.pendingFetches - 1
+        context.log.info(s"Enhanced part $partNum, ${newPending} parts remaining")
+
+        val newState = State(state.allCategories, enhancedParts, newPending, state.replyTo)
+        if (newPending == 0) {
+          state.replyTo ! TaxonomyFetched(state.allCategories, enhancedParts)
+          idle(downloader, cache)
+        } else {
+          enhanceParts(newState, downloader, cache)
+        }
+
+      case FetchResponse(CachedDownloader.Failed(_, reason)) =>
+        context.log.error(s"download failed: ${reason}")
+        state.replyTo ! Failed(reason)
+        idle(downloader, cache)
+
+      case AskFailure(ex) =>
+        context.log.error("ask to downloader failed", ex)
+        state.replyTo ! Failed(ex)
+        idle(downloader, cache)
+
+      case GetTaxonomy(_) =>
         Behaviors.unhandled
     }
   }

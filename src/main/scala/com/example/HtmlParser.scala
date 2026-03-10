@@ -7,6 +7,16 @@ import scala.collection.JavaConverters._
 
 object HtmlParser {
 
+  def enhancePart(legoPart: LegoPart, html: String): LegoPart = {
+    val doc = Jsoup.parse(html)
+    val altNums = doc.select("span.part_num").asScala
+      .map(_.text().trim)
+      .filter(_.nonEmpty)
+      .filter(_ != legoPart.partNumber)
+      .toSet
+    legoPart.copy(altNumbers = altNums)
+  }
+
   def getCategoryNumber(href: String): Option[String] = {
     val startIndex = href.indexOf("parts/category-")
     if (startIndex != -1) {
