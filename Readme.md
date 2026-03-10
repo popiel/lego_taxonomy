@@ -26,6 +26,7 @@ and Brickset set inventories.
 Given a parts list in "summary.csv" run either:
 * sbt run summary.csv
 * sbt "run summary.csv"
+
 depending on exactly which platform (Windows, Mac, Linux, whatever) you're running on.
 
 The system then outputs a new file "summary-sorted.csv"
