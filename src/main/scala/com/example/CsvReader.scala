@@ -12,6 +12,7 @@ class CsvReader {
     val partNumberIndex = findColumnIndex(headers, Seq("partNumber", "DesignID", "BLItemNo"))
     val colorIndex = findColumnIndex(headers, Seq("color", "Colour", "ColorName"))
     val quantityIndex = findColumnIndex(headers, Seq("quantity", "Qty"))
+    val nameIndex = findColumnIndex(headers, Seq("name", "ElementName", "PartName"))
 
     lines.tail.flatMap { line =>
       val fields = parseCsvLine(line)
@@ -19,7 +20,10 @@ class CsvReader {
         partNumber <- partNumberIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
         color <- colorIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
         quantity <- quantityIndex.flatMap(i => Try(fields(i).trim.toInt).toOption)
-      } yield ColoredPart(partNumber, color, quantity)
+      } yield {
+        val name = nameIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty).getOrElse("")
+        ColoredPart(partNumber, color, quantity, name)
+      }
     }
   }
 

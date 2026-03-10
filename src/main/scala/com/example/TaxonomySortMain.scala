@@ -62,33 +62,25 @@ object TaxonomySortMain {
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
   def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
-    val partMap = taxonomyParts.groupBy(_.partNumber).mapValues(_.head)
+    val partMap = taxonomyParts.groupBy(_.partNumber).mapValues(_.head).toMap
     for (file <- files) {
       if (file.endsWith(".csv")) {
         val coloredParts = new CsvReader().readColoredParts(file)
-        val sortedParts = coloredParts.sortWith { (a, b) =>
-          val aPart = partMap.get(a.partNumber)
-          val bPart = partMap.get(b.partNumber)
-          val partCmp = (aPart, bPart) match {
-            case (Some(ap), Some(bp)) => ap.compare(bp)
-            case (Some(_), None) => -1
-            case (None, Some(_)) => 1
-            case (None, None) => a.partNumber.compare(b.partNumber)
-          }
-          if (partCmp != 0) partCmp < 0
-          else {
-            val colorCmp = a.color.compare(b.color)
-            if (colorCmp != 0) colorCmp < 0
-            else a.quantity.compare(b.quantity) < 0
-          }
-        }
-        val outputFile = file.replace(".csv", "-sorted.csv")
-        val header = "quantity,color,partNumber,name,category,category2,category3,category4\n"
-        val rows = sortedParts.map { cp =>
+
+        val matchedParts = coloredParts.map { cp =>
           val legoPart = partMap.get(cp.partNumber)
-          val name = legoPart.map(_.name).getOrElse("")
-          val catNames = legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
-          s"${cp.quantity},${escapeCsv(cp.color)},${cp.partNumber},${escapeCsv(name)},${catNames.headOption.getOrElse("")},${catNames.lift(1).getOrElse("")},${catNames.lift(2).getOrElse("")},${catNames.lift(3).getOrElse("")}"
+          MatchedPart(cp, legoPart)
+        }
+
+        val sortedParts = matchedParts.sorted
+
+        val outputFile = file.replace(".csv", "-sorted.csv")
+        val header = "quantity,color,partNumber_input,name_input,partNumber_taxonomy,name_taxonomy,category,category2,category3,category4\n"
+        val rows = sortedParts.map { mp =>
+          val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
+          val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
+          val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
+          s"${mp.coloredPart.quantity},${escapeCsv(mp.coloredPart.color)},${mp.coloredPart.partNumber},${escapeCsv(mp.coloredPart.name)},${partNumber_taxonomy},${escapeCsv(name_taxonomy)},${catNames.headOption.getOrElse("")},${catNames.lift(1).getOrElse("")},${catNames.lift(2).getOrElse("")},${catNames.lift(3).getOrElse("")}"
         }.mkString("\n")
         writeToFile(outputFile, header + rows)
       }
