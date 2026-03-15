@@ -125,7 +125,7 @@ object TaxonomyFetcher {
           }
         }
         val newPending = state.pendingFetches - 1
-        context.log.info(s"Enhanced part $partNum, ${newPending} parts remaining")
+        // context.log.info(s"Enhanced part $partNum, ${newPending} parts remaining")
 
         if (newPending == 0) {
           if (state.remainingParts.isEmpty) {

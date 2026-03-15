@@ -22,7 +22,7 @@ object TaxonomyScheduler {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
-      implicit val timeout: Timeout = Timeout(1.seconds)
+      implicit val timeout: Timeout = Timeout(30.minutes)
 
       def scheduleNextFetch(): Unit = {
         val delay = calculateDelayUntil3am()
@@ -33,18 +33,7 @@ object TaxonomyScheduler {
         })
       }
 
-      def handleFetchResult(result: TaxonomyFetcher.Response): Unit = {
-        result match {
-          case TaxonomyFetcher.TaxonomyFetched(categories, parts) =>
-            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(categories, parts)
-            context.log.info(s"Taxonomy fetched: ${categories.size} categories, ${parts.size} parts")
-          case TaxonomyFetcher.Failed(reason) =>
-            context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
-        }
-        scheduleNextFetch()
-      }
-
-      Behaviors.receiveMessage { message =>
+      Behaviors.receiveMessage[Command] { message =>
         message match {
           case FetchTaxonomy =>
             context.ask(fetcherRef, TaxonomyFetcher.GetTaxonomy) {
@@ -68,6 +57,10 @@ object TaxonomyScheduler {
             scheduleNextFetch()
             Behaviors.same
         }
+      }.receiveSignal {
+        case (context, signal) =>
+          context.log.info(s"TaxonomyScheduler got signal $signal")
+          Behaviors.same
       }
     }
   }

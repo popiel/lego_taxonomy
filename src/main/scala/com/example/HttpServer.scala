@@ -138,6 +138,11 @@ object Routes {
             color: #666;
             font-style: italic;
         }
+        .file-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -161,7 +166,8 @@ object Routes {
         ${if (results.isEmpty) {
             """<p class="no-results">Upload a CSV file to see sorted results.</p>"""
         } else {
-            s"""<table>
+            val fileNameHtml = fileName.map(fn => s"""<p class="file-name">Uploaded file: ${escapeHtml(fn)}</p>""").getOrElse("")
+            s"""${fileNameHtml}<table>
                 <thead>
                     <tr>
                         <th>quantity</th>
