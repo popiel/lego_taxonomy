@@ -27,7 +27,7 @@ object TaxonomySortMain {
 
     val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder), "parts-processor")
 
-    val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(taxonomyDataHolder), "taxonomy-scheduler")
+    val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy
 
     import system.executionContext

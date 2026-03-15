@@ -1,21 +1,24 @@
 package com.example
 
-import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
+import scala.util.{Success, Failure}
 import java.time.{LocalTime, LocalDateTime, ZonedDateTime, ZoneId}
 
 object TaxonomyScheduler {
   sealed trait Command
   case object FetchTaxonomy extends Command
+  private case class TaxonomyFetchedResult(categories: Set[Category], parts: List[LegoPart]) extends Command
+  private case class TaxonomyFetchedFailed(reason: Throwable) extends Command
 
   private val FetchHour = 3
   private val FetchMinute = 0
 
-  def apply(taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command]): Behavior[Command] = {
+  def apply(fetcherRef: ActorRef[TaxonomyFetcher.Command], taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command]): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
@@ -30,21 +33,38 @@ object TaxonomyScheduler {
         })
       }
 
+      def handleFetchResult(result: TaxonomyFetcher.Response): Unit = {
+        result match {
+          case TaxonomyFetcher.TaxonomyFetched(categories, parts) =>
+            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(categories, parts)
+            context.log.info(s"Taxonomy fetched: ${categories.size} categories, ${parts.size} parts")
+          case TaxonomyFetcher.Failed(reason) =>
+            context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
+        }
+        scheduleNextFetch()
+      }
+
       Behaviors.receiveMessage { message =>
         message match {
           case FetchTaxonomy =>
-            val fetcherSystem = context.system.asInstanceOf[ActorSystem[TaxonomyFetcher.Command]]
-            val fetcherAsk = fetcherSystem.ask(ref => TaxonomyFetcher.GetTaxonomy(ref))
-            fetcherAsk.onComplete {
-              case scala.util.Success(TaxonomyFetcher.TaxonomyFetched(categories, parts)) =>
-                taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(categories, parts,
-                  context.system.systemActorOf(Behaviors.receiveMessage[TaxonomyDataHolder.Response](_ => Behaviors.stopped), "reply-handler"))
-                context.log.info(s"Taxonomy fetched: ${categories.size} categories, ${parts.size} parts")
-              case scala.util.Success(TaxonomyFetcher.Failed(reason)) =>
-                context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
-              case scala.util.Failure(ex) =>
-                context.log.error(s"Taxonomy fetch failed: ${ex.getMessage}", ex)
+            context.ask(fetcherRef, TaxonomyFetcher.GetTaxonomy) {
+              case Success(TaxonomyFetcher.TaxonomyFetched(categories, parts)) =>
+                TaxonomyFetchedResult(categories, parts)
+              case Success(TaxonomyFetcher.Failed(reason)) =>
+                TaxonomyFetchedFailed(reason)
+              case Failure(ex) =>
+                TaxonomyFetchedFailed(ex)
             }
+            Behaviors.same
+
+          case TaxonomyFetchedResult(categories, parts) =>
+            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(categories, parts)
+            context.log.info(s"Taxonomy fetched: ${categories.size} categories, ${parts.size} parts")
+            scheduleNextFetch()
+            Behaviors.same
+
+          case TaxonomyFetchedFailed(reason) =>
+            context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
             scheduleNextFetch()
             Behaviors.same
         }
