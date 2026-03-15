@@ -1,18 +1,46 @@
 package com.example
 
-//#imports
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.AskPattern._
+import akka.util.Timeout
 import scala.concurrent.Await
-import scala.concurrent.duration.Duration
-//#imports
-
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext
 
 object TaxonomySortMain {
 
   def main(args: Array[String]): Unit = {
+    if (args.contains("-web")) {
+      runWebMode()
+    } else {
+      runBatchMode(args)
+    }
+  }
+
+  def runWebMode(): Unit = {
+    val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
+
+    val taxonomyDataHolder = system.systemActorOf(TaxonomyDataHolder(), "taxonomy-data-holder")
+
+    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder), "parts-processor")
+
+    val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(taxonomyDataHolder), "taxonomy-scheduler")
+    taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy
+
+    import system.executionContext
+    import akka.stream.Materializer
+    implicit val materializer: Materializer = Materializer(system)
+
+    val bindingFuture = HttpServer.start(partsProcessor, system)
+
+    Await.result(system.whenTerminated, Duration.Inf)
+    System.exit(0)
+  }
+
+  def runBatchMode(args: Array[String]): Unit = {
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
     val probe = system.systemActorOf(Behaviors.receiveMessage[TaxonomyFetcher.Response] { msg =>
       msg match {

@@ -30,4 +30,7 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "3.2.15" % Test,
 
   // HTML parsing
-  "org.jsoup" % "jsoup" % "1.17.2")
+  "org.jsoup" % "jsoup" % "1.17.2",
+
+  // SSL certificate generation
+  "org.bouncycastle" % "bcpkix-jdk15to18" % "1.78")

@@ -65,7 +65,7 @@ object CachedDownloader {
                 }.flatMap {
                   case DiskCache.FetchResult(key, value, time) =>
                     val now = System.currentTimeMillis()
-                    if (now - time < 86400000) {
+                    if (now - time < 81000000) { // 22.5 hours
                       Future.successful(Downloaded(key, value))
                     } else {
                       networkFetch(Some(DateTime(time)), Some(value))

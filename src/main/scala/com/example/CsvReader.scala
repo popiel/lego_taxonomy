@@ -5,7 +5,11 @@ import scala.util.Try
 
 class CsvReader {
   def readColoredParts(filePath: String): List[ColoredPart] = {
-    val lines = Source.fromFile(filePath).getLines().toList
+    readColoredPartsFromString(Source.fromFile(filePath).mkString)
+  }
+
+  def readColoredPartsFromString(content: String): List[ColoredPart] = {
+    val lines = content.linesIterator.toList
     if (lines.isEmpty) return Nil
 
     val headers = parseCsvLine(lines.head).map(_.trim)
