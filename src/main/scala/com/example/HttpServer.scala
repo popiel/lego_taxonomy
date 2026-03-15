@@ -48,30 +48,45 @@ object Routes {
     partsProcessor: ActorRef[PartsProcessor.Command]
   )(implicit ec: ExecutionContext, materializer: Materializer): Route = {
     implicit val scheduler: akka.actor.typed.Scheduler = actorSystem.scheduler
+    val cachedDownloader = actorSystem.systemActorOf(CachedDownloader(actorSystem.systemActorOf(DiskCache(), "disk-cache")), "cached-downloader")
+    
     concat(
       pathSingleSlash(redirect("/parts-sorter.html", StatusCodes.Found)),
       get {
         path("parts-sorter.html") {
-          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, partsSorterHtml(None, Nil)))
+          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, partsSorterHtml(Nil, None)))
         }
       },
       post {
         path("parts-sorter.html") {
-          fileUpload("csvFile") { case (fileInfo, byteSource) =>
-            val csvContent: Future[String] = byteSource.runFold("")(_ + _.utf8String)
+          formField("setNumber".as[String].?) { setNumberOpt =>
+            setNumberOpt match {
+              case Some(setNumber) if setNumber.trim.nonEmpty =>
+                val processedParts: Future[(List[MatchedPart], String)] = fetchAndProcessFromBrickset(cachedDownloader, setNumber, partsProcessor)
+                
+                onSuccess(processedParts) { case (results, actualSetNumber) =>
+                  complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
+                    partsSorterHtml(results, Some(s"Set inventory from Brickset.com for set $actualSetNumber"))))
+                }
+              
+              case _ =>
+                fileUpload("csvFile") { case (fileInfo, byteSource) =>
+                  val csvContent: Future[String] = byteSource.runFold("")(_ + _.utf8String)
 
-            implicit val timeout: Timeout = Timeout(1.seconds)
+                  implicit val timeout: Timeout = Timeout(1.seconds)
 
-            val processedParts: Future[List[MatchedPart]] = csvContent.flatMap { content =>
-              val coloredParts = new CsvReader().readColoredPartsFromString(content)
-              partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
-                case PartsProcessor.ProcessedParts(parts) => parts
-              }
-            }
+                  val processedParts: Future[List[MatchedPart]] = csvContent.flatMap { content =>
+                    val coloredParts = new CsvReader().readColoredPartsFromString(content)
+                    partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
+                      case PartsProcessor.ProcessedParts(parts) => parts
+                    }
+                  }
 
-            onSuccess(processedParts) { results =>
-              complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
-                partsSorterHtml(Some(fileInfo.fileName), results)))
+                  onSuccess(processedParts) { results =>
+                    complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
+                      partsSorterHtml(results, Some(s"Uploaded file: ${fileInfo.fileName}"))))
+                  }
+                }
             }
           }
         }
@@ -79,7 +94,39 @@ object Routes {
     )
   }
 
-  def partsSorterHtml(fileName: Option[String], results: List[MatchedPart]): String = {
+  private def fetchAndProcessFromBrickset(
+    cachedDownloader: ActorRef[CachedDownloader.Command],
+    setNumber: String,
+    partsProcessor: ActorRef[PartsProcessor.Command]
+  )(implicit scheduler: akka.actor.typed.Scheduler, ec: ExecutionContext): Future[(List[MatchedPart], String)] = {
+    import akka.actor.typed.scaladsl.AskPattern._
+    implicit val timeout: Timeout = 30.seconds
+    
+    def tryFetch(num: String): Future[(List[MatchedPart], String)] = {
+      val url = s"https://brickset.com/export/inventory/$num"
+      cachedDownloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
+        case CachedDownloader.Downloaded(_, content) =>
+          val coloredParts = new CsvReader().readColoredPartsFromString(content)
+          if (coloredParts.isEmpty) {
+            if (!num.endsWith("-1")) {
+              tryFetch(num + "-1")
+            } else {
+              Future.successful((Nil, num))
+            }
+          } else {
+            partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
+              case PartsProcessor.ProcessedParts(parts) => (parts, num)
+            }
+          }
+        case CachedDownloader.Failed(_, reason) =>
+          Future.failed(reason)
+      }
+    }
+    
+    tryFetch(setNumber.trim)
+  }
+
+  def partsSorterHtml(results: List[MatchedPart], sourceMessage: Option[String]): String = {
     s"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -154,8 +201,12 @@ object Routes {
     <div class="input-section">
         <h2>Input</h2>
         <form method="POST" action="/parts-sorter.html" enctype="multipart/form-data" id="uploadForm">
+            <div style="margin-bottom: 15px;">
+                <label for="setNumber">LEGO Set Number:</label><br>
+                <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321">
+            </div>
             <div>
-                <label for="csvFile">Upload CSV file:</label><br>
+                <label for="csvFile">Or upload CSV file:</label><br>
                 <input type="file" name="csvFile" id="csvFile" accept=".csv">
             </div>
         </form>
@@ -164,10 +215,10 @@ object Routes {
     <div class="output-section">
         <h2>Output</h2>
         ${if (results.isEmpty) {
-            """<p class="no-results">Upload a CSV file to see sorted results.</p>"""
+            """<p class="no-results">Enter a LEGO Set Number or upload a CSV file to see sorted results.</p>"""
         } else {
-            val fileNameHtml = fileName.map(fn => s"""<p class="file-name">Uploaded file: ${escapeHtml(fn)}</p>""").getOrElse("")
-            s"""${fileNameHtml}<table>
+            val sourceHtml = sourceMessage.map(msg => s"""<p class="file-name">${escapeHtml(msg)}</p>""").getOrElse("")
+            s"""${sourceHtml}<table>
                 <thead>
                     <tr>
                         <th>quantity</th>
@@ -208,6 +259,13 @@ object Routes {
     <script>
         document.getElementById('csvFile').addEventListener('change', function() {
             if (this.files.length > 0) {
+                document.getElementById('setNumber').value = '';
+                document.getElementById('uploadForm').submit();
+            }
+        });
+        document.getElementById('setNumber').addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                document.getElementById('csvFile').value = '';
                 document.getElementById('uploadForm').submit();
             }
         });
