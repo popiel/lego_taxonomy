@@ -128,5 +128,23 @@ class DownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       }
       attempt should ===(2) // ensure that the retry actually happened
     }
+
+    "fetch inventory from brickset.com and return CSV content" in {
+      val probe = createTestProbe[Downloader.Response]()
+      val downloader = spawn(Downloader())
+      downloader ! Downloader.Fetch("https://brickset.com/exportscripts/inventory/21002-1", probe.ref)
+      val msg = probe.expectMessageType[Downloader.Downloaded](30.seconds)
+      val coloredParts = new CsvReader().readColoredPartsFromString(msg.content)
+      coloredParts.length should be > 2
+    }
+
+    "return no parts when fetching set 21002 without -1 suffix" in {
+      val probe = createTestProbe[Downloader.Response]()
+      val downloader = spawn(Downloader())
+      downloader ! Downloader.Fetch("https://brickset.com/exportscripts/inventory/21002", probe.ref)
+      val msg = probe.expectMessageType[Downloader.Downloaded](30.seconds)
+      val coloredParts = new CsvReader().readColoredPartsFromString(msg.content)
+      coloredParts.length should be(0)
+    }
   }
 }

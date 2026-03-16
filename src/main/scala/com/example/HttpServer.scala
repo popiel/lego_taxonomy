@@ -103,7 +103,7 @@ object Routes {
     implicit val timeout: Timeout = 30.seconds
     
     def tryFetch(num: String): Future[(List[MatchedPart], String)] = {
-      val url = s"https://brickset.com/export/inventory/$num"
+      val url = s"https://brickset.com/exportscripts/inventory/$num"
       cachedDownloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
         case CachedDownloader.Downloaded(_, content) =>
           val coloredParts = new CsvReader().readColoredPartsFromString(content)
@@ -203,7 +203,7 @@ object Routes {
         <form method="POST" action="/parts-sorter.html" enctype="multipart/form-data" id="uploadForm">
             <div style="margin-bottom: 15px;">
                 <label for="setNumber">LEGO Set Number:</label><br>
-                <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321">
+                <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">
             </div>
             <div>
                 <label for="csvFile">Or upload CSV file:</label><br>
@@ -263,8 +263,8 @@ object Routes {
                 document.getElementById('uploadForm').submit();
             }
         });
-        document.getElementById('setNumber').addEventListener('input', function() {
-            if (this.value.trim() !== '') {
+        document.getElementById('setNumber').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && this.value.trim() !== '') {
                 document.getElementById('csvFile').value = '';
                 document.getElementById('uploadForm').submit();
             }

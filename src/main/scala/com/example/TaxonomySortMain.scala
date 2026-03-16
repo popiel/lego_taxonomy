@@ -6,6 +6,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
@@ -21,7 +22,11 @@ object TaxonomySortMain {
   }
 
   def runWebMode(): Unit = {
-    val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
+    val config = ConfigFactory.parseString("""
+        akka.http.parsing.cookie-parsing-mode = raw
+      """).withFallback(ConfigFactory.load())
+
+    val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system", config)
 
     val taxonomyDataHolder = system.systemActorOf(TaxonomyDataHolder(), "taxonomy-data-holder")
 
