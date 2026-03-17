@@ -1,6 +1,8 @@
 package com.example
 
+import java.io.InputStream
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 import scala.collection.mutable
 import scala.io.Source
 import scala.util.Try
@@ -173,6 +175,19 @@ class StudioIoReader {
     } finally {
       zipFile.close()
     }
+  }
+
+  def readColoredParts(inputStream: InputStream): List[ColoredPart] = {
+    val zipStream = new ZipInputStream(inputStream)
+    var ldrContent: String = null
+    var entry = zipStream.getNextEntry()
+    while (entry != null) {
+      if (entry.getName == "model2.ldr") {
+        ldrContent = Source.fromInputStream(zipStream).mkString
+      }
+      entry = zipStream.getNextEntry()
+    }
+    readColoredPartsFromString(ldrContent)
   }
 
   def readColoredPartsFromString(content: String): List[ColoredPart] = {

@@ -19,7 +19,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import akka.stream.scaladsl.StreamConverters
 import java.io.{BufferedInputStream, InputStreamReader}
-import java.util.zip.ZipInputStream
 
 object HttpServer {
   val HttpPort = 37080
@@ -132,16 +131,7 @@ object Routes {
     bufferedStream.mark(8192)
 
     try {
-      val zipStream = new ZipInputStream(bufferedStream)
-      var ldrContent: String = null
-      var entry = zipStream.getNextEntry()
-      while (entry != null) {
-        if (entry.getName == "model2.ldr") {
-          ldrContent = scala.io.Source.fromInputStream(zipStream).mkString
-        }
-        entry = zipStream.getNextEntry()
-      }
-      new StudioIoReader().readColoredPartsFromString(ldrContent)
+      new StudioIoReader().readColoredParts(bufferedStream)
     } catch {
       case e: Exception =>
         bufferedStream.reset()
