@@ -33,15 +33,15 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
     val ldrContent = 
       """1 1 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat
         |1 4 10 0 0 1 0 0 0 1 0 0 0 1 3001.dat
-        |11 7 3 0 0 0 0 0 0 1 0 0 0 1 0 3010.dat""".stripMargin
+        |11 86 3 0 0 0 0 0 0 1 0 0 0 1 0 3010.dat""".stripMargin
     
     val ioReader = new StudioIoReader()
     val parts = ioReader.readColoredPartsFromString(ldrContent)
     
     parts.length shouldBe 3
-    parts.find(p => p.partNumber == "3001" && p.color == "Blue").get.quantity shouldBe 1
-    parts.find(p => p.partNumber == "3001" && p.color == "Red").get.quantity shouldBe 1
-    parts.find(p => p.partNumber == "3010" && p.color == "Light Grey").get.quantity shouldBe 3
+    parts.find(p => p.partNumber == "3001" && p.color == "White").get.quantity shouldBe 1
+    parts.find(p => p.partNumber == "3001" && p.color == "Orange").get.quantity shouldBe 1
+    parts.find(p => p.partNumber == "3010" && p.color == "Light Bluish Gray").get.quantity shouldBe 3
   }
 
   it should "parse simple.io from ZipInputStream" in {
@@ -85,5 +85,40 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
       part.partNumber should not be empty
       part.quantity should be > 0
     }
+  }
+
+  it should "map BrickLink color 1 to White" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    parts.find(_.color == "White") should not be empty
+  }
+
+  it should "map BrickLink color 11 to Black" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    parts.find(_.color == "Black") should not be empty
+  }
+
+  it should "map BrickLink color 5 to Red" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/simple.io")
+    parts.find(_.color == "Red") should not be empty
+  }
+
+  it should "map BrickLink color 7 to Blue" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/simple.io")
+    parts.find(_.color == "Blue") should not be empty
+  }
+
+  it should "map BrickLink color 12 to Trans-Clear" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    parts.find(_.color == "Trans-Clear") should not be empty
+  }
+
+  it should "map BrickLink color 86 to Light Bluish Gray" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    parts.find(_.color == "Light Bluish Gray") should not be empty
+  }
+
+  it should "map BrickLink color 85 to Dark Bluish Gray" in {
+    val parts = new StudioIoReader().readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    parts.find(_.color == "Dark Bluish Gray") should not be empty
   }
 }
