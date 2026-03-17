@@ -1,6 +1,6 @@
 package com.example
 
-import java.io.InputStream
+import java.io.{BufferedReader, InputStream, InputStreamReader, Reader, StringReader}
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import scala.collection.mutable
@@ -170,8 +170,12 @@ class StudioIoReader {
       if (entry == null) {
         throw new RuntimeException("model2.ldr not found in .io file")
       }
-      val content = Source.fromInputStream(zipFile.getInputStream(entry)).mkString
-      readColoredPartsFromString(content)
+      val reader = new InputStreamReader(zipFile.getInputStream(entry))
+      try {
+        readColoredPartsFromReader(reader)
+      } finally {
+        reader.close()
+      }
     } finally {
       zipFile.close()
     }
@@ -179,19 +183,27 @@ class StudioIoReader {
 
   def readColoredParts(inputStream: InputStream): List[ColoredPart] = {
     val zipStream = new ZipInputStream(inputStream)
-    var ldrContent: String = null
-    var entry = zipStream.getNextEntry()
-    while (entry != null) {
-      if (entry.getName == "model2.ldr") {
-        ldrContent = Source.fromInputStream(zipStream).mkString
+    var reader: Reader = null
+    try {
+      var entry = zipStream.getNextEntry()
+      while (entry != null && reader == null) {
+        if (entry.getName == "model2.ldr") {
+          reader = new InputStreamReader(zipStream)
+        } else {
+          entry = zipStream.getNextEntry()
+        }
       }
-      entry = zipStream.getNextEntry()
+      if (reader == null) {
+        throw new RuntimeException("model2.ldr not found in .io file")
+      }
+      readColoredPartsFromReader(reader)
+    } finally {
+      if (reader != null) reader.close()
     }
-    readColoredPartsFromString(ldrContent)
   }
 
-  def readColoredPartsFromString(content: String): List[ColoredPart] = {
-    val (firstSubfileName, subfiles, partDescriptions) = parseAllSubfiles(content)
+  def readColoredPartsFromReader(reader: Reader): List[ColoredPart] = {
+    val (firstSubfileName, subfiles, partDescriptions) = parseLDraw(reader)
     val partCounts = mutable.Map[(String, String), Int]()
 
     val mainSubfile = firstSubfileName match {
@@ -207,55 +219,92 @@ class StudioIoReader {
     }.toList.sortBy(p => (p.partNumber, p.color))
   }
 
-  private def parseAllSubfiles(content: String): (String, Map[String, ParsedSubfile], Map[String, String]) = {
+  def readColoredPartsFromString(content: String): List[ColoredPart] = {
+    val reader = new StringReader(content)
+    readColoredPartsFromReader(reader)
+  }
+
+  private def parseLDraw(reader: Reader): (String, Map[String, ParsedSubfile], Map[String, String]) = {
+    val bufferedReader = new BufferedReader(reader)
     val subfilesMap = mutable.Map[String, ParsedSubfile]()
     val partDescriptions = mutable.Map[String, String]()
+
     var firstSubfileName: String = null
-    
-    // Split content by subfiles (0 FILE ... 0 NOFILE)
-    val subfileSections = content.split("0 NOFILE")
+    var currentSubfileName: String = null
+    var currentDirectParts = List.empty[(String, Int, Int)]
+    var currentSubfileRefs = List.empty[String]
     var hasSubfiles = false
-    
-    for (section <- subfileSections) {
-      val trimmed = section.trim
-      val cleanContent = if (trimmed.startsWith("\uFEFF")) trimmed.drop(1) else trimmed
-      if (cleanContent.startsWith("0 FILE")) {
+    var lineNum = 0
+    var inDatSubfile = false
+
+    var line = bufferedReader.readLine()
+    while (line != null) {
+      lineNum += 1
+      val trimmed = line.trim
+      val lineToCheck = trimmed.stripPrefix("\uFEFF")
+
+      if (lineToCheck.startsWith("0 FILE ")) {
+        // Save previous subfile if exists
+        if (currentSubfileName != null) {
+          subfilesMap(currentSubfileName.toLowerCase) =
+            ParsedSubfile(currentSubfileName, currentDirectParts.reverse, currentSubfileRefs.reverse)
+        }
+
+        // Start new subfile
+        currentSubfileName = lineToCheck.replaceFirst("0 FILE ", "").trim
+        currentDirectParts = Nil
+        currentSubfileRefs = Nil
         hasSubfiles = true
-        // Extract subfile name from "0 FILE filename"
-        val lines = trimmed.linesIterator.toVector
-        val nameLine = lines.head.trim
-        val subfileName = nameLine.replaceFirst("0 FILE", "").trim
-        
-        if (subfileName.nonEmpty) {
-          if (firstSubfileName == null) {
-            firstSubfileName = subfileName
+        inDatSubfile = currentSubfileName.endsWith(".dat") || currentSubfileName.endsWith(".DAT")
+        lineNum = 1  // Reset line number for new subfile
+
+        if (firstSubfileName == null) {
+          firstSubfileName = currentSubfileName
+        }
+
+      } else if (lineToCheck == "0 NOFILE") {
+        // Save current subfile
+        if (currentSubfileName != null) {
+          subfilesMap(currentSubfileName.toLowerCase) =
+            ParsedSubfile(currentSubfileName, currentDirectParts.reverse, currentSubfileRefs.reverse)
+          currentSubfileName = null
+          currentDirectParts = Nil
+          currentSubfileRefs = Nil
+        }
+
+      } else if (inDatSubfile && lineNum == 2 && lineToCheck.startsWith("0 ") && !lineToCheck.startsWith("0 Name:")) {
+        // Part description line for .dat subfiles
+        val description = lineToCheck.stripPrefix("0 ")
+        val partNumber = extractPartNumber(currentSubfileName)
+        partDescriptions(partNumber) = description
+        inDatSubfile = false
+
+      } else if (lineToCheck.startsWith("1 ") || lineToCheck.startsWith("11 ")) {
+        // Part line
+        parseLdrLine(lineToCheck).foreach { case (partNumber, colorIndex, qty) =>
+          if (partNumber.endsWith(".dat") || partNumber.endsWith(".DAT")) {
+            currentDirectParts ::= (extractPartNumber(partNumber), colorIndex, qty)
+          } else {
+            currentSubfileRefs ::= partNumber
           }
-          
-          // Extract part description if this is a .dat subfile
-          if (subfileName.endsWith(".dat") || subfileName.endsWith(".DAT")) {
-            if (lines.length > 1) {
-              val secondLine = lines(1).trim
-              if (secondLine.startsWith("0 ") && !secondLine.startsWith("0 Name:")) {
-                val description = secondLine.stripPrefix("0 ")
-                val partNumber = extractPartNumber(subfileName)
-                partDescriptions(partNumber) = description
-              }
-            }
-          }
-          
-          val parsed = parseSubfile(subfileName, trimmed)
-          subfilesMap(subfileName.toLowerCase) = parsed
         }
       }
+
+      line = bufferedReader.readLine()
     }
-    
-    // If no subfile structure found, treat entire content as main subfile
-    if (!hasSubfiles && content.trim.nonEmpty) {
-      val parsed = parseSubfile("main", content)
-      subfilesMap("main") = parsed
+
+    // Save last subfile if not already saved (when file doesn't end with 0 NOFILE)
+    if (currentSubfileName != null && !subfilesMap.contains(currentSubfileName.toLowerCase)) {
+      subfilesMap(currentSubfileName.toLowerCase) =
+        ParsedSubfile(currentSubfileName, currentDirectParts.reverse, currentSubfileRefs.reverse)
+    }
+
+    // Handle case with no subfile structure (treat entire content as main)
+    if (!hasSubfiles && firstSubfileName == null) {
+      subfilesMap("main") = ParsedSubfile("main", currentDirectParts.reverse, currentSubfileRefs.reverse)
       firstSubfileName = "main"
     }
-    
+
     (firstSubfileName, subfilesMap.toMap, partDescriptions.toMap)
   }
 

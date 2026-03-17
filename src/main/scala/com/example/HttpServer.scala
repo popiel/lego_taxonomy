@@ -137,6 +137,8 @@ object Routes {
         bufferedStream.reset()
         val csvReader = new CsvReader()
         csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream))
+    } finally {
+      inputStream.close()
     }
   }
 
