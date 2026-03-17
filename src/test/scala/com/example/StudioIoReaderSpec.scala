@@ -41,7 +41,7 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
     parts.length shouldBe 3
     parts.find(p => p.partNumber == "3001" && p.color == "Blue").get.quantity shouldBe 1
     parts.find(p => p.partNumber == "3001" && p.color == "Red").get.quantity shouldBe 1
-    parts.find(p => p.partNumber == "3010" && p.color == "Blue").get.quantity shouldBe 3
+    parts.find(p => p.partNumber == "3010" && p.color == "Light Grey").get.quantity shouldBe 3
   }
 
   it should "parse simple.io from ZipInputStream" in {
