@@ -30,7 +30,11 @@ object TaxonomySortMain {
 
     val taxonomyDataHolder = system.systemActorOf(TaxonomyDataHolder(), "taxonomy-data-holder")
 
-    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder), "parts-processor")
+    val cache = system.systemActorOf(DiskCache(), "cache")
+    val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
+    val bricksetPartCache = system.systemActorOf(BricksetPartCache(downloader), "brickset-part-cache")
+
+    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, bricksetPartCache), "parts-processor")
 
     val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy
@@ -94,22 +98,24 @@ object TaxonomySortMain {
 
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
-  def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
+  def matchParts(coloredParts: List[ColoredPart], taxonomyParts: List[LegoPart]): List[MatchedPart] = {
     val partMap = taxonomyParts.flatMap(part => (part.partNumber :: part.altNumbers.toList).map(_ -> part)).toMap
+    val matchedParts = coloredParts.map { cp =>
+      val legoPart = partMap.get(cp.partNumber)
+      MatchedPart(cp, legoPart)
+    }
+    matchedParts.sorted
+  }
+
+  def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
     for (file <- files) {
       if (file.endsWith(".csv")) {
         val coloredParts = new CsvReader().readColoredParts(file)
-
-        val matchedParts = coloredParts.map { cp =>
-          val legoPart = partMap.get(cp.partNumber)
-          MatchedPart(cp, legoPart)
-        }
-
-        val sortedParts = matchedParts.sorted
+        val matchedParts = matchParts(coloredParts, taxonomyParts)
 
         val outputFile = file.replace(".csv", "-sorted.csv")
         val header = "quantity,color,partNumber_input,name_input,partNumber_taxonomy,name_taxonomy,category,category2,category3,category4\n"
-        val rows = sortedParts.map { mp =>
+        val rows = matchedParts.map { mp =>
           val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
           val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
           val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)

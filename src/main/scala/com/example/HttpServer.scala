@@ -23,6 +23,7 @@ import java.io.{BufferedInputStream, InputStreamReader}
 object HttpServer {
   val HttpPort = 37080
   val HttpsPort = 37443
+  val DefaultMaxImageWidth = 100
 
   def start(
     partsProcessor: ActorRef[PartsProcessor.Command],
@@ -251,7 +252,14 @@ object Routes {
                     </tr>
                 </thead>
                 <tbody>
-                    ${results.map { mp =>
+                    ${
+                        val maxTaxonomyWidth = results.flatMap(_.legoPart.flatMap(_.imageWidth))
+                          .map(_.toDouble)
+                          .maxOption
+                          .getOrElse(HttpServer.DefaultMaxImageWidth.toDouble)
+                          .toInt
+
+                        results.map { mp =>
                         val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
                         val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
                         val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
@@ -263,7 +271,7 @@ object Routes {
                           case (Some(url), Some(w), Some(h)) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" height="${escapeHtml(h)}" />"""
                           case (Some(url), Some(w), None) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" />"""
                           case (Some(url), None, Some(h)) => s"""<img src="${escapeHtml(url)}" height="${escapeHtml(h)}" />"""
-                          case (Some(url), None, None) => s"""<img src="${escapeHtml(url)}" />"""
+                          case (Some(url), None, None) => s"""<img src="${escapeHtml(url)}" style="max-width: ${maxTaxonomyWidth}px" />"""
                           case _ => ""
                         }
                         s"""<tr>
