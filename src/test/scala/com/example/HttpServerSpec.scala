@@ -93,6 +93,35 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
     
+    "handle .io file upload and include part names from model2.ldr" in {
+      val ioFile = new java.io.File("src/test/resources/simple.io")
+      val ioBytes = {
+        val fis = new java.io.FileInputStream(ioFile)
+        val bytes = Array.ofDim[Byte](ioFile.length.toInt)
+        fis.read(bytes)
+        fis.close()
+        bytes
+      }
+      
+      val formData = Multipart.FormData(
+        Multipart.FormData.BodyPart(
+          "inputFile",
+          HttpEntity(MediaTypes.`application/octet-stream`, ioBytes),
+          Map("filename" -> "simple.io")
+        )
+      )
+      
+      Post("/parts-sorter.html", formData) ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`text/html(UTF-8)`)
+        val responseBody = entityAs[String]
+        responseBody should include("Uploaded file: simple.io")
+        responseBody should include("<table>")
+        responseBody should include("Brick 2 x 4")
+        responseBody should include("Brick 1 x 4")
+      }
+    }
+    
     "handle request without file part" in {
       Post("/parts-sorter.html") ~> route ~> check {
         handled shouldBe false

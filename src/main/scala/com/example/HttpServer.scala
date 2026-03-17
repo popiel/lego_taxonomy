@@ -136,7 +136,7 @@ object Routes {
       var ldrContent: String = null
       var entry = zipStream.getNextEntry()
       while (entry != null) {
-        if (entry.getName == "model.ldr") {
+        if (entry.getName == "model2.ldr") {
           ldrContent = scala.io.Source.fromInputStream(zipStream).mkString
         }
         entry = zipStream.getNextEntry()
