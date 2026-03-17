@@ -51,8 +51,8 @@ object BricksetPartFetcher {
       None
     } else {
       Some(LegoPart(
-        partNumber = queryPartNumber,
-        name = name,
+        partNumber = "",
+        name = "",
         categories = Nil,
         sequenceNumber = 0,
         altNumbers = Set.empty,

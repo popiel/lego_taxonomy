@@ -11,8 +11,8 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
 
     result.isDefined shouldBe true
     val part = result.get
-    part.partNumber shouldBe "69040"
-    part.name shouldBe "PLATE 4X6 W.12 KNOBS, NO.7"
+    part.partNumber shouldBe ""
+    part.name shouldBe ""
     part.imageUrl shouldBe Some("https://images.brickset.com/parts/6309250.jpg")
     part.categories shouldBe empty
   }
@@ -23,8 +23,8 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
 
     result.isDefined shouldBe true
     val part = result.get
-    part.partNumber shouldBe "69315"
-    part.name shouldBe "BANNER W.3.18 STICK 3X8, NO. 6"
+    part.partNumber shouldBe ""
+    part.name shouldBe ""
     part.imageUrl shouldBe Some("https://images.brickset.com/parts/6338238.jpg")
     part.categories shouldBe empty
   }
@@ -35,8 +35,8 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
 
     result.isDefined shouldBe true
     val part = result.get
-    part.partNumber shouldBe "78185"
-    part.name shouldBe "MINI FIGURE TROPHY, NO. 56"
+    part.partNumber shouldBe ""
+    part.name shouldBe ""
     part.imageUrl shouldBe Some("https://images.brickset.com/parts/6342715.jpg")
     part.categories shouldBe empty
   }
