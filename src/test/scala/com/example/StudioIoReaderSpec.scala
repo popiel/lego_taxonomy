@@ -61,4 +61,16 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
     val parts = new StudioIoReader().readColoredPartsFromString(ldrContent)
     parts.find(_.partNumber == "3010").get.quantity shouldBe 6
   }
+
+  it should "parse pacer_version_2.1_new_steps.io using first subfile name" in {
+    val ioReader = new StudioIoReader()
+    val parts = ioReader.readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
+    
+    parts should not be empty
+    parts.length should be > 20
+    parts.foreach { part =>
+      part.partNumber should not be empty
+      part.quantity should be > 0
+    }
+  }
 }

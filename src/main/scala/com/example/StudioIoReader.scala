@@ -71,10 +71,13 @@ class StudioIoReader {
   }
 
   def readColoredPartsFromString(content: String): List[ColoredPart] = {
-    val subfiles = parseAllSubfiles(content)
+    val (firstSubfileName, subfiles) = parseAllSubfiles(content)
     val partCounts = mutable.Map[(String, String), Int]()
-    
-    val mainSubfile = subfiles.get("simple.io").orElse(subfiles.get("main")).orElse(subfiles.values.headOption).getOrElse(null)
+
+    val mainSubfile = firstSubfileName match {
+      case null => subfiles.values.headOption.getOrElse(null)
+      case name => subfiles.get(name.toLowerCase).orElse(subfiles.values.headOption).getOrElse(null)
+    }
     countParts(subfiles, mainSubfile, Set.empty, 1, partCounts)
 
     partCounts.map { case ((partNumber, color), qty) =>
@@ -83,8 +86,9 @@ class StudioIoReader {
     }.toList.sortBy(p => (p.partNumber, p.color))
   }
 
-  private def parseAllSubfiles(content: String): Map[String, ParsedSubfile] = {
+  private def parseAllSubfiles(content: String): (String, Map[String, ParsedSubfile]) = {
     val subfilesMap = mutable.Map[String, ParsedSubfile]()
+    var firstSubfileName: String = null
     
     // Split content by subfiles (0 FILE ... 0 NOFILE)
     val subfileSections = content.split("0 NOFILE")
@@ -100,6 +104,9 @@ class StudioIoReader {
         val subfileName = nameLine.replaceFirst("0 FILE", "").trim
         
         if (subfileName.nonEmpty) {
+          if (firstSubfileName == null) {
+            firstSubfileName = subfileName
+          }
           val parsed = parseSubfile(subfileName, trimmed)
           subfilesMap(subfileName.toLowerCase) = parsed
         }
@@ -110,9 +117,10 @@ class StudioIoReader {
     if (!hasSubfiles && content.trim.nonEmpty) {
       val parsed = parseSubfile("main", content)
       subfilesMap("main") = parsed
+      firstSubfileName = "main"
     }
     
-    subfilesMap.toMap
+    (firstSubfileName, subfilesMap.toMap)
   }
 
   private def parseSubfile(name: String, content: String): ParsedSubfile = {
