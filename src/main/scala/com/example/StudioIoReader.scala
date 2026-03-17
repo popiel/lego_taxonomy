@@ -288,9 +288,9 @@ class StudioIoReader {
   def readColoredParts(filePath: String): List[ColoredPart] = {
     val zipFile = new ZipFile(filePath)
     try {
-      val entry = zipFile.getEntry("model.ldr")
+      val entry = zipFile.getEntry("model2.ldr")
       if (entry == null) {
-        throw new RuntimeException("model.ldr not found in .io file")
+        throw new RuntimeException("model2.ldr not found in .io file")
       }
       val content = Source.fromInputStream(zipFile.getInputStream(entry)).mkString
       readColoredPartsFromString(content)
@@ -300,7 +300,7 @@ class StudioIoReader {
   }
 
   def readColoredPartsFromString(content: String): List[ColoredPart] = {
-    val (firstSubfileName, subfiles) = parseAllSubfiles(content)
+    val (firstSubfileName, subfiles, partDescriptions) = parseAllSubfiles(content)
     val partCounts = mutable.Map[(String, String), Int]()
 
     val mainSubfile = firstSubfileName match {
@@ -311,12 +311,14 @@ class StudioIoReader {
 
     partCounts.map { case ((partNumber, color), qty) =>
       val colorName = colorMap.getOrElse(color.toInt, s"Color$color")
-      ColoredPart(partNumber, colorName, qty)
+      val partName = partDescriptions.getOrElse(partNumber, "")
+      ColoredPart(partNumber, colorName, qty, partName)
     }.toList.sortBy(p => (p.partNumber, p.color))
   }
 
-  private def parseAllSubfiles(content: String): (String, Map[String, ParsedSubfile]) = {
+  private def parseAllSubfiles(content: String): (String, Map[String, ParsedSubfile], Map[String, String]) = {
     val subfilesMap = mutable.Map[String, ParsedSubfile]()
+    val partDescriptions = mutable.Map[String, String]()
     var firstSubfileName: String = null
     
     // Split content by subfiles (0 FILE ... 0 NOFILE)
@@ -329,13 +331,27 @@ class StudioIoReader {
       if (cleanContent.startsWith("0 FILE")) {
         hasSubfiles = true
         // Extract subfile name from "0 FILE filename"
-        val nameLine = trimmed.linesIterator.next().trim
+        val lines = trimmed.linesIterator.toVector
+        val nameLine = lines.head.trim
         val subfileName = nameLine.replaceFirst("0 FILE", "").trim
         
         if (subfileName.nonEmpty) {
           if (firstSubfileName == null) {
             firstSubfileName = subfileName
           }
+          
+          // Extract part description if this is a .dat subfile
+          if (subfileName.endsWith(".dat") || subfileName.endsWith(".DAT")) {
+            if (lines.length > 1) {
+              val secondLine = lines(1).trim
+              if (secondLine.startsWith("0 ") && !secondLine.startsWith("0 Name:")) {
+                val description = secondLine.stripPrefix("0 ")
+                val partNumber = extractPartNumber(subfileName)
+                partDescriptions(partNumber) = description
+              }
+            }
+          }
+          
           val parsed = parseSubfile(subfileName, trimmed)
           subfilesMap(subfileName.toLowerCase) = parsed
         }
@@ -349,7 +365,7 @@ class StudioIoReader {
       firstSubfileName = "main"
     }
     
-    (firstSubfileName, subfilesMap.toMap)
+    (firstSubfileName, subfilesMap.toMap, partDescriptions.toMap)
   }
 
   private def parseSubfile(name: String, content: String): ParsedSubfile = {

@@ -62,6 +62,19 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
     parts.find(_.partNumber == "3010").get.quantity shouldBe 6
   }
 
+  it should "extract part names from model2.ldr descriptions" in {
+    val ioReader = new StudioIoReader()
+    val parts = ioReader.readColoredParts("src/test/resources/simple.io")
+    
+    val part3001 = parts.find(_.partNumber == "3001")
+    part3001 shouldBe defined
+    part3001.get.name shouldBe "Brick 2 x 4"
+    
+    val part3010 = parts.find(_.partNumber == "3010")
+    part3010 shouldBe defined
+    part3010.get.name shouldBe "Brick 1 x 4"
+  }
+
   it should "parse pacer_version_2.1_new_steps.io using first subfile name" in {
     val ioReader = new StudioIoReader()
     val parts = ioReader.readColoredParts("src/test/resources/pacer_version_2.1_new_steps.io")
