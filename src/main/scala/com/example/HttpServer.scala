@@ -10,11 +10,16 @@ import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.FileIO
+import akka.stream.scaladsl.Source
 import akka.stream.Materializer
 import akka.util.Timeout
+import akka.util.ByteString
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
+import akka.stream.scaladsl.StreamConverters
+import java.io.{BufferedInputStream, InputStreamReader}
+import java.util.zip.ZipInputStream
 
 object HttpServer {
   val HttpPort = 37080
@@ -71,36 +76,11 @@ object Routes {
               
               case _ =>
                 fileUpload("inputFile") { case (fileInfo, byteSource) =>
-                  import akka.stream.scaladsl.StreamConverters
-                  import java.io.{BufferedInputStream, InputStreamReader}
-                  import java.util.zip.ZipInputStream
-
                   implicit val timeout: Timeout = Timeout(10.seconds)
-
-                  val inputStream = byteSource.runWith(StreamConverters.asInputStream())
-                  val bufferedStream = new BufferedInputStream(inputStream, 8192)
-                  bufferedStream.mark(8192)
-
-                  val coloredParts = try {
-                    val zipStream = new ZipInputStream(bufferedStream)
-                    var ldrContent: String = null
-                    var entry = zipStream.getNextEntry()
-                    while (entry != null) {
-                      if (entry.getName == "model.ldr") {
-                        ldrContent = scala.io.Source.fromInputStream(zipStream).mkString
-                      }
-                      entry = zipStream.getNextEntry()
-                    }
-                    new StudioIoReader().readColoredPartsFromString(ldrContent)
-                  } catch {
-                    case e: Exception =>
-                      bufferedStream.reset()
-                      val csvReader = new CsvReader()
-                      csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream))
+                  val coloredPartsF = processUploadedFile(byteSource)
+                  val processedParts = coloredPartsF.flatMap { coloredParts =>
+                    partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _))
                   }
-
-                  val processedParts = partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _))
-
                   onSuccess(processedParts) {
                     case PartsProcessor.ProcessedParts(results) =>
                       complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
@@ -144,6 +124,30 @@ object Routes {
     }
     
     tryFetch(setNumber.trim)
+  }
+
+  private def processUploadedFile(byteSource: Source[ByteString, _])(implicit ec: ExecutionContext, materializer: Materializer): Future[List[ColoredPart]] = Future {
+    val inputStream = byteSource.runWith(StreamConverters.asInputStream())
+    val bufferedStream = new BufferedInputStream(inputStream, 8192)
+    bufferedStream.mark(8192)
+
+    try {
+      val zipStream = new ZipInputStream(bufferedStream)
+      var ldrContent: String = null
+      var entry = zipStream.getNextEntry()
+      while (entry != null) {
+        if (entry.getName == "model.ldr") {
+          ldrContent = scala.io.Source.fromInputStream(zipStream).mkString
+        }
+        entry = zipStream.getNextEntry()
+      }
+      new StudioIoReader().readColoredPartsFromString(ldrContent)
+    } catch {
+      case e: Exception =>
+        bufferedStream.reset()
+        val csvReader = new CsvReader()
+        csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream))
+    }
   }
 
   def partsSorterHtml(results: List[MatchedPart], sourceMessage: Option[String]): String = {
