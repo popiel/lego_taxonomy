@@ -67,4 +67,23 @@ class HtmlParserSpec extends AnyFlatSpec with Matchers {
     enhanced.altNumbers should contain ("37293")
     enhanced.altNumbers should not contain ("3069")
   }
+
+  "parseCategoryHtml" should "extract image URLs for parts" in {
+    val html = Source.fromFile("src/test/resources/category-1.html").mkString
+    val url = "https://brickarchitect.com/parts/category-1"
+    val (_, parts) = HtmlParser.parseCategoryHtml(url, html)
+
+    parts.exists(_.imageUrl.isDefined) shouldBe true
+
+    parts.foreach { part =>
+      part.imageUrl match {
+        case Some(imageUrl) =>
+          imageUrl should endWith(s"${part.partNumber}.png")
+        case None =>
+          fail(s"Part ${part.partNumber} should have an image URL")
+      }
+      part.imageWidth shouldBe defined
+      part.imageHeight shouldBe defined
+    }
+  }
 }

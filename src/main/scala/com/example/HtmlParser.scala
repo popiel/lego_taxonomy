@@ -110,7 +110,17 @@ object HtmlParser {
         val partNumber = partNumSpan.text().trim
         val partName = partNameSpan.text().trim
         sequenceNumber += 1
-        val legoPart = LegoPart(partNumber, partName, category.hierarchy, sequenceNumber)
+        
+        val imgElement = Option(span.parent())
+          .flatMap(parent => Option(parent.selectFirst("span.td.part_image")))
+          .flatMap(imgSpan => Option(imgSpan.selectFirst("img")))
+        
+        val imageUrl = imgElement.flatMap(img => Option(img.attr("src"))).filter(_.nonEmpty)
+        val imageWidth = imgElement.flatMap(img => Option(img.attr("width"))).filter(_.nonEmpty)
+        val imageHeight = imgElement.flatMap(img => Option(img.attr("height"))).filter(_.nonEmpty)
+        
+        val legoPart = LegoPart(partNumber, partName, category.hierarchy, sequenceNumber, 
+          imageUrl = imageUrl, imageWidth = imageWidth, imageHeight = imageHeight)
         parts = legoPart :: parts
       }
     }

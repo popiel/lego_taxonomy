@@ -5,7 +5,10 @@ case class LegoPart(
   name: String,
   categories: List[Category],
   sequenceNumber: Int = 0,
-  altNumbers: Set[String] = Set.empty
+  altNumbers: Set[String] = Set.empty,
+  imageUrl: Option[String] = None,
+  imageWidth: Option[String] = None,
+  imageHeight: Option[String] = None
 ) extends Ordered[LegoPart] {
   def compare(that: LegoPart): Int = {
     val aCats = this.categories.map(_.number.toInt)

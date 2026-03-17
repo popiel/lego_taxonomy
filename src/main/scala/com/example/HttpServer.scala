@@ -223,10 +223,11 @@ object Routes {
                     <tr>
                         <th>quantity</th>
                         <th>color</th>
-                        <th>partNumber_input</th>
-                        <th>name_input</th>
-                        <th>partNumber_taxonomy</th>
-                        <th>name_taxonomy</th>
+                        <th>input partNumber</th>
+                        <th>input name</th>
+                        <th>taxonomy partNumber</th>
+                        <th>taxonomy name</th>
+                        <th>image</th>
                         <th>category</th>
                         <th>category2</th>
                         <th>category3</th>
@@ -238,6 +239,17 @@ object Routes {
                         val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
                         val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
                         val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
+                        val legoPart = mp.legoPart
+                        val imageUrl = legoPart.flatMap(_.imageUrl)
+                        val imageWidth = legoPart.flatMap(_.imageWidth)
+                        val imageHeight = legoPart.flatMap(_.imageHeight)
+                        val imageHtml = (imageUrl, imageWidth, imageHeight) match {
+                          case (Some(url), Some(w), Some(h)) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" height="${escapeHtml(h)}" />"""
+                          case (Some(url), Some(w), None) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" />"""
+                          case (Some(url), None, Some(h)) => s"""<img src="${escapeHtml(url)}" height="${escapeHtml(h)}" />"""
+                          case (Some(url), None, None) => s"""<img src="${escapeHtml(url)}" />"""
+                          case _ => ""
+                        }
                         s"""<tr>
                             <td>${mp.coloredPart.quantity}</td>
                             <td>${escapeHtml(mp.coloredPart.color)}</td>
@@ -245,6 +257,7 @@ object Routes {
                             <td>${escapeHtml(mp.coloredPart.name)}</td>
                             <td>${escapeHtml(partNumber_taxonomy)}</td>
                             <td>${escapeHtml(name_taxonomy)}</td>
+                            <td>${imageHtml}</td>
                             <td>${escapeHtml(catNames.headOption.getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(1).getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(2).getOrElse(""))}</td>
