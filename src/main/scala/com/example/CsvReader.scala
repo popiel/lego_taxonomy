@@ -1,15 +1,30 @@
 package com.example
 
+import java.io.{FileInputStream, InputStreamReader, Reader}
 import scala.io.Source
 import scala.util.Try
 
 class CsvReader {
   def readColoredParts(filePath: String): List[ColoredPart] = {
-    readColoredPartsFromString(Source.fromFile(filePath).mkString)
+    readColoredPartsFromSource(Source.fromFile(filePath))
   }
 
   def readColoredPartsFromString(content: String): List[ColoredPart] = {
-    val lines = content.linesIterator.toList
+    readColoredPartsFromSource(Source.fromString(content))
+  }
+
+  def readColoredPartsFromReader(reader: Reader): List[ColoredPart] = {
+    val bufferedReader = new java.io.BufferedReader(reader)
+    val lines = scala.collection.Iterator.continually(bufferedReader.readLine()).takeWhile(_ != null).toList
+    parseLines(lines)
+  }
+
+  private def readColoredPartsFromSource(source: Source): List[ColoredPart] = {
+    val lines = source.getLines().toList
+    parseLines(lines)
+  }
+
+  private def parseLines(lines: List[String]): List[ColoredPart] = {
     if (lines.isEmpty) return Nil
 
     val headers = parseCsvLine(lines.head).map(_.trim)

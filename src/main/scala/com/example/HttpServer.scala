@@ -70,21 +70,41 @@ object Routes {
                 }
               
               case _ =>
-                fileUpload("csvFile") { case (fileInfo, byteSource) =>
-                  val csvContent: Future[String] = byteSource.runFold("")(_ + _.utf8String)
+                fileUpload("inputFile") { case (fileInfo, byteSource) =>
+                  import akka.stream.scaladsl.StreamConverters
+                  import java.io.{BufferedInputStream, InputStreamReader}
+                  import java.util.zip.ZipInputStream
 
-                  implicit val timeout: Timeout = Timeout(1.seconds)
+                  implicit val timeout: Timeout = Timeout(10.seconds)
 
-                  val processedParts: Future[List[MatchedPart]] = csvContent.flatMap { content =>
-                    val coloredParts = new CsvReader().readColoredPartsFromString(content)
-                    partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
-                      case PartsProcessor.ProcessedParts(parts) => parts
+                  val inputStream = byteSource.runWith(StreamConverters.asInputStream())
+                  val bufferedStream = new BufferedInputStream(inputStream, 8192)
+                  bufferedStream.mark(8192)
+
+                  val coloredParts = try {
+                    val zipStream = new ZipInputStream(bufferedStream)
+                    var ldrContent: String = null
+                    var entry = zipStream.getNextEntry()
+                    while (entry != null) {
+                      if (entry.getName == "model.ldr") {
+                        ldrContent = scala.io.Source.fromInputStream(zipStream).mkString
+                      }
+                      entry = zipStream.getNextEntry()
                     }
+                    new StudioIoReader().readColoredPartsFromString(ldrContent)
+                  } catch {
+                    case e: Exception =>
+                      bufferedStream.reset()
+                      val csvReader = new CsvReader()
+                      csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream))
                   }
 
-                  onSuccess(processedParts) { results =>
-                    complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
-                      partsSorterHtml(results, Some(s"Uploaded file: ${fileInfo.fileName}"))))
+                  val processedParts = partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _))
+
+                  onSuccess(processedParts) {
+                    case PartsProcessor.ProcessedParts(results) =>
+                      complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
+                        partsSorterHtml(results, Some(s"Uploaded file: ${fileInfo.fileName}"))))
                   }
                 }
             }
@@ -206,8 +226,8 @@ object Routes {
                 <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">
             </div>
             <div>
-                <label for="csvFile">Or upload CSV file:</label><br>
-                <input type="file" name="csvFile" id="csvFile" accept=".csv">
+                <label for="inputFile">Or upload file (.csv or .io):</label><br>
+                <input type="file" name="inputFile" id="inputFile" accept=".csv,.io">
             </div>
         </form>
     </div>
@@ -270,7 +290,7 @@ object Routes {
     </div>
 
     <script>
-        document.getElementById('csvFile').addEventListener('change', function() {
+        document.getElementById('inputFile').addEventListener('change', function() {
             if (this.files.length > 0) {
                 document.getElementById('setNumber').value = '';
                 document.getElementById('uploadForm').submit();
@@ -278,7 +298,7 @@ object Routes {
         });
         document.getElementById('setNumber').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && this.value.trim() !== '') {
-                document.getElementById('csvFile').value = '';
+                document.getElementById('inputFile').value = '';
                 document.getElementById('uploadForm').submit();
             }
         });

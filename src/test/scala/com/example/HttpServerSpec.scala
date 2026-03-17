@@ -60,7 +60,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("Tom Alphin")
         responseBody should include("brickarchitect.com")
         responseBody should include("""<input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">""")
-        responseBody should include("""<input type="file" name="csvFile" id="csvFile" accept=".csv">""")
+        responseBody should include("""<input type="file" name="inputFile" id="inputFile" accept=".csv,.io">""")
         responseBody should include("""<form method="POST" action="/parts-sorter.html" enctype="multipart/form-data" id="uploadForm">""")
       }
     }
@@ -73,7 +73,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       
       val formData = Multipart.FormData(
         Multipart.FormData.BodyPart(
-          "csvFile",
+          "inputFile",
           HttpEntity(ContentTypes.`text/csv(UTF-8)`, csvContent),
           Map("filename" -> "test.csv")
         )

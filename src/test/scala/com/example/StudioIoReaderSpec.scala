@@ -2,6 +2,9 @@ package com.example
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import java.io.{BufferedInputStream, FileInputStream}
+import java.util.zip.ZipInputStream
+import scala.io.Source
 
 class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
   
@@ -39,5 +42,23 @@ class StudioIoReaderSpec extends AnyFlatSpec with Matchers {
     parts.find(p => p.partNumber == "3001" && p.color == "Blue").get.quantity shouldBe 1
     parts.find(p => p.partNumber == "3001" && p.color == "Red").get.quantity shouldBe 1
     parts.find(p => p.partNumber == "3010" && p.color == "Blue").get.quantity shouldBe 3
+  }
+
+  it should "parse simple.io from ZipInputStream" in {
+    val file = new java.io.File("src/test/resources/simple.io")
+    val bufferedStream = new BufferedInputStream(new FileInputStream(file), 4096)
+    
+    val zipStream = new ZipInputStream(bufferedStream)
+    var ldrContent: String = null
+    var entry = zipStream.getNextEntry()
+    while (entry != null) {
+      if (entry.getName == "model.ldr") {
+        ldrContent = Source.fromInputStream(zipStream).mkString
+      }
+      entry = zipStream.getNextEntry()
+    }
+    
+    val parts = new StudioIoReader().readColoredPartsFromString(ldrContent)
+    parts.find(_.partNumber == "3010").get.quantity shouldBe 6
   }
 }

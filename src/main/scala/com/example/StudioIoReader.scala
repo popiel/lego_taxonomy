@@ -125,7 +125,7 @@ class StudioIoReader {
         parseLdrLine(trimmed) match {
           case Some((partNumber, colorIndex, qty)) =>
             if (partNumber.endsWith(".dat") || partNumber.endsWith(".DAT")) {
-              directParts = (partNumber, colorIndex, qty) :: directParts
+              directParts = (extractPartNumber(partNumber), colorIndex, qty) :: directParts
             } else {
               subfileRefs = partNumber :: subfileRefs
             }
@@ -152,7 +152,7 @@ class StudioIoReader {
     
     // Count direct parts with multiplier
     for ((partNumber, colorIndex, qty) <- subfile.directParts) {
-      val key = (extractPartNumber(partNumber), colorIndex.toString)
+      val key = (partNumber, colorIndex.toString)
       partCounts(key) = partCounts.getOrElse(key, 0) + multiplier * qty
     }
     
