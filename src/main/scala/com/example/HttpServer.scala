@@ -263,6 +263,7 @@ object Routes {
                         val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
                         val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
                         val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
+                        val guessedMarker = if (mp.categoriesGuessed && catNames.nonEmpty) " (guessed)" else ""
                         val legoPart = mp.legoPart
                         val imageUrl = legoPart.flatMap(_.imageUrl)
                         val imageWidth = legoPart.flatMap(_.imageWidth)
@@ -282,7 +283,7 @@ object Routes {
                             <td>${escapeHtml(partNumber_taxonomy)}</td>
                             <td>${escapeHtml(name_taxonomy)}</td>
                             <td>${imageHtml}</td>
-                            <td>${escapeHtml(catNames.headOption.getOrElse(""))}</td>
+                            <td>${escapeHtml(catNames.headOption.getOrElse(""))}$guessedMarker</td>
                             <td>${escapeHtml(catNames.lift(1).getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(2).getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(3).getOrElse(""))}</td>

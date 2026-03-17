@@ -1,6 +1,6 @@
 package com.example
 
-case class MatchedPart(coloredPart: ColoredPart, legoPart: Option[LegoPart]) extends Ordered[MatchedPart] {
+case class MatchedPart(coloredPart: ColoredPart, legoPart: Option[LegoPart], categoriesGuessed: Boolean = false) extends Ordered[MatchedPart] {
   def compare(that: MatchedPart): Int = {
     val legoCmp = (this.legoPart, that.legoPart) match {
       case (Some(lp1), Some(lp2)) => lp1.compare(lp2)
