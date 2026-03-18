@@ -82,7 +82,7 @@ object PartsProcessor {
                             bricksetPart match {
                               case Some(bp) if bp.categories.isEmpty =>
                                 val searchResult = searchMap.getOrElse(mp.coloredPart.partNumber, TaxonomyDataHolder.SearchResult(Nil))
-                                val (updatedPart, guessed) = inferCategories(bp, mp.coloredPart.name, searchResult.parts, matchedPartsWithBrickset)
+                                val (updatedPart, guessed) = inferCategories(bp, mp.coloredPart.partNumber, mp.coloredPart.name, searchResult.parts, matchedPartsWithBrickset, logger)
                                 MatchedPart(mp.coloredPart, Some(updatedPart), guessed)
                               case Some(bp) =>
                                 MatchedPart(mp.coloredPart, Some(bp), false)
@@ -120,12 +120,17 @@ object PartsProcessor {
     }
   }
 
-  private def inferCategories(bricksetPart: LegoPart, coloredPartName: String, searchResults: List[(LegoPart, Int)], matchedParts: List[MatchedPart]): (LegoPart, Boolean) = {
+  private def inferCategories(bricksetPart: LegoPart, coloredPartNumber: String, coloredPartName: String, searchResults: List[(LegoPart, Int)], matchedParts: List[MatchedPart], logger: org.slf4j.Logger): (LegoPart, Boolean) = {
+    logger.info(s"Fuzzy matching: partNumber=$coloredPartNumber, name=$coloredPartName")
+    val bricksetWordsTokenized = PartNameIndex.tokenize(coloredPartName)
+    logger.info(s"  Tokenized: ${bricksetWordsTokenized.mkString(", ")}")
+    logger.info(s"  Top 5 fuzzy matches: ${searchResults.take(5).map { case (part, count) => s"${part.name} ($count)" }.mkString(", ")}")
+
     if (searchResults.isEmpty) {
       return (bricksetPart, false)
     }
 
-    val bricksetWords = PartNameIndex.tokenize(coloredPartName).toSet
+    val bricksetWords = bricksetWordsTokenized.toSet
 
     val exactMatch = searchResults.find { case (part, _) =>
       val partWords = PartNameIndex.tokenize(part.name).toSet

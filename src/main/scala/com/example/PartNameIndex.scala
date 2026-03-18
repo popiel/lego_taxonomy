@@ -45,11 +45,21 @@ object PartNameIndex {
       val noComma = word.stripSuffix(",")
 
       val letterBeforePeriod = raw"([a-zA-Z]+)\.(.+)".r
-      noComma match {
+      val splitWord = noComma match {
         case letterBeforePeriod(before, after) =>
           List(s"$before.", after.toLowerCase)
         case _ =>
           List(noComma.toLowerCase)
+      }
+
+      splitWord.flatMap { w =>
+        val numberDashAlpha = raw"(\d+)-([a-zA-Z]+)".r
+        w match {
+          case numberDashAlpha(num, alpha) =>
+            List(num, alpha)
+          case _ =>
+            List(w)
+        }
       }
     }.filter(_.nonEmpty).toList
 

@@ -257,4 +257,20 @@ class PartNameIndexSpec extends AnyFlatSpec with Matchers {
     // This should work: taxonomy words are subset of colored part words
     taxonomyWords.subsetOf(coloredPartWords) shouldBe true
   }
+
+  // Tests for number-dash-alphabetics splitting
+  it should "split number-dash-alphabetics into two words" in {
+    val tokens = PartNameIndex.tokenize("3-edges")
+    tokens should contain ("3")
+    tokens should contain ("edges")
+  }
+
+  it should "handle multiple number-dash patterns" in {
+    // "3-edges" should be split into "3" and "edges"
+    val tokens = PartNameIndex.tokenize("3-edges 4-arms")
+    tokens should contain ("3")
+    tokens should contain ("edges")
+    tokens should contain ("4")
+    tokens should contain ("arms")
+  }
 }
