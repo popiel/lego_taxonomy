@@ -89,4 +89,105 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
     
     newName shouldBe "1×4 Tile (guessed)"
   }
+  
+  it should "use taxonomy name with (guessed) for common prefix match" in {
+    val taxonomyParts = List(
+      LegoPart("3001", "2×4 Brick", List(Category("1", "Basic", None), Category("2", "Brick", None)), 1, Set.empty, None, None, None),
+      LegoPart("3003", "2×3 Brick", List(Category("1", "Basic", None), Category("2", "Brick", None)), 2, Set.empty, None, None, None),
+      LegoPart("3004", "1×2 Brick", List(Category("1", "Basic", None), Category("2", "Brick", None)), 3, Set.empty, None, None, None)
+    )
+    val index = PartNameIndex.buildIndex(taxonomyParts)
+    
+    val searchResults = PartNameIndex.search(index, "BRICK 2")
+    
+    val bricksetPart = LegoPart(
+      partNumber = "99999",
+      name = "",
+      categories = Nil,
+      sequenceNumber = 0,
+      altNumbers = Set.empty,
+      imageUrl = None,
+      imageWidth = None,
+      imageHeight = None
+    )
+    
+    val commonPrefix = findCommonCategoryPrefix(searchResults.take(5).map(_._1))
+    commonPrefix.nonEmpty shouldBe true
+    
+    val bestMatch = searchResults.take(5).find { case (part, _) =>
+      part.categories.zip(commonPrefix).forall { case (cat, prefixCat) => cat == prefixCat }
+    }
+    
+    bestMatch.isDefined shouldBe true
+    val newName = bestMatch.map(p => s"${p._1.name} (guessed)").getOrElse(bricksetPart.name)
+    
+    newName should include("(guessed)")
+  }
+  
+  it should "guess name for part 39746 from Brickset inventory using taxonomy" in {
+    val taxonomyParts = List(
+      LegoPart("2470", "2×2 Round Tile", List(Category("1", "Basic", None), Category("3", "Tile", None), Category("4", "Round Tile", None)), 1, Set.empty, None, None, None),
+      LegoPart("2920", "1×1 Round Tile", List(Category("1", "Basic", None), Category("3", "Tile", None), Category("4", "Round Tile", None)), 2, Set.empty, None, None, None),
+      LegoPart("2431", "1×4 Tile", List(Category("1", "Basic", None), Category("3", "Tile", None), Category("4", "1× Tile", None)), 3, Set.empty, None, None, None)
+    )
+    val index = PartNameIndex.buildIndex(taxonomyParts)
+    
+    val coloredPartName = "FLAT TILE 2X2, ROUND, NO. 1112"
+    val searchResults = PartNameIndex.search(index, coloredPartName)
+    
+    searchResults.isEmpty shouldBe false
+    
+    val bricksetPart = LegoPart(
+      partNumber = "39746",
+      name = "",
+      categories = Nil,
+      sequenceNumber = 0,
+      altNumbers = Set.empty,
+      imageUrl = Some("https://example.com/39746.jpg"),
+      imageWidth = None,
+      imageHeight = None
+    )
+    
+    val bricksetWords = PartNameIndex.tokenize(coloredPartName).toSet
+    
+    val exactMatch = searchResults.find { case (part, _) =>
+      val partWords = PartNameIndex.tokenize(part.name).toSet
+      partWords.subsetOf(bricksetWords)
+    }
+    
+    exactMatch.isDefined shouldBe true
+    val matchedPart = exactMatch.get._1
+    
+    val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
+    val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
+    
+    val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords) &&
+                          matchedPart.categories == searchResults.head._1.categories
+    
+    val newName = if (useTaxonomyName) s"${matchedPart.name} (guessed)" else bricksetPart.name
+    
+    newName shouldBe "2×2 Round Tile (guessed)"
+    newName should include("(guessed)")
+  }
+  
+  private def findCommonCategoryPrefix(parts: List[LegoPart]): List[Category] = {
+    if (parts.isEmpty) return Nil
+
+    val hierarchies = parts.map(_.categories)
+    if (hierarchies.exists(_.isEmpty)) return Nil
+
+    val minLength = hierarchies.map(_.length).min
+    if (minLength == 0) return Nil
+
+    val commonPrefix = (0 until minLength).collect { i =>
+      val categoryAtPosition = hierarchies.map(_.apply(i))
+      if (categoryAtPosition.forall(_ == categoryAtPosition.head)) {
+        Some(categoryAtPosition.head)
+      } else {
+        None
+      }
+    }.takeWhile(_.isDefined).flatten
+
+    commonPrefix.toList
+  }
 }

@@ -137,17 +137,25 @@ object PartsProcessor {
         val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
         val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
 
-        val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords) &&
-                              matchedPart.categories == searchResults.head._1.categories
+        val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords)
 
-        val newName = if (useTaxonomyName) s"${matchedPart.name} (guessed)" else bricksetPart.name
-        val updatedPart = bricksetPart.copy(name = newName, categories = matchedPart.categories)
-        (updatedPart, true)
+        if (useTaxonomyName) {
+          val newName = s"${matchedPart.name} (guessed)"
+          val updatedPart = bricksetPart.copy(name = newName, categories = matchedPart.categories)
+          (updatedPart, true)
+        } else {
+          val updatedPart = bricksetPart.copy(categories = matchedPart.categories)
+          (updatedPart, true)
+        }
       case None =>
         val top5 = searchResults.take(5)
         val commonPrefix = findCommonCategoryPrefix(top5.map(_._1))
         if (commonPrefix.nonEmpty) {
-          val updatedPart = bricksetPart.copy(categories = commonPrefix)
+          val bestMatch = top5.find { case (part, _) =>
+            part.categories.zip(commonPrefix).forall { case (cat, prefixCat) => cat == prefixCat }
+          }
+          val newName = bestMatch.map(p => s"${p._1.name} (guessed)").getOrElse(bricksetPart.name)
+          val updatedPart = bricksetPart.copy(name = newName, categories = commonPrefix)
           (updatedPart, true)
         } else {
           val bricksetNameLower = bricksetPart.name.toLowerCase
@@ -166,7 +174,8 @@ object PartsProcessor {
 
           prefixMatch match {
             case Some((matchedLegoPart, _)) =>
-              val updatedPart = bricksetPart.copy(categories = matchedLegoPart.categories)
+              val newName = s"${matchedLegoPart.name} (guessed)"
+              val updatedPart = bricksetPart.copy(name = newName, categories = matchedLegoPart.categories)
               (updatedPart, true)
             case None =>
               (bricksetPart, false)
