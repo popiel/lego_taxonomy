@@ -134,7 +134,14 @@ object PartsProcessor {
 
     exactMatch match {
       case Some((matchedPart, _)) =>
-        val updatedPart = bricksetPart.copy(categories = matchedPart.categories)
+        val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
+        val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
+
+        val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords) &&
+                              matchedPart.categories == searchResults.head._1.categories
+
+        val newName = if (useTaxonomyName) s"${matchedPart.name} (guessed)" else bricksetPart.name
+        val updatedPart = bricksetPart.copy(name = newName, categories = matchedPart.categories)
         (updatedPart, true)
       case None =>
         val top5 = searchResults.take(5)
