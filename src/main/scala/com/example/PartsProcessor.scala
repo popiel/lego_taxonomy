@@ -121,10 +121,10 @@ object PartsProcessor {
   }
 
   private def inferCategories(bricksetPart: LegoPart, coloredPartNumber: String, coloredPartName: String, searchResults: List[(LegoPart, Int)], matchedParts: List[MatchedPart], logger: org.slf4j.Logger): (LegoPart, Boolean) = {
-    logger.info(s"Fuzzy matching: partNumber=$coloredPartNumber, name=$coloredPartName")
+    logger.debug(s"Fuzzy matching: partNumber=$coloredPartNumber, name=$coloredPartName")
     val bricksetWordsTokenized = PartNameIndex.tokenize(coloredPartName)
-    logger.info(s"  Tokenized: ${bricksetWordsTokenized.mkString(", ")}")
-    logger.info(s"  Top 5 fuzzy matches: ${searchResults.take(5).map { case (part, count) => s"${part.name} ($count)" }.mkString(", ")}")
+    logger.debug(s"  Tokenized: ${bricksetWordsTokenized.mkString(", ")}")
+    logger.debug(s"  Top 5 fuzzy matches: ${searchResults.take(5).map { case (part, count) => s"${part.name} ($count)" }.mkString(", ")}")
 
     if (searchResults.isEmpty) {
       return (bricksetPart, false)
@@ -139,22 +139,12 @@ object PartsProcessor {
 
     exactMatch match {
       case Some((matchedPart, _)) =>
-        val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
-        val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
-
-        val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords)
-
-        if (useTaxonomyName) {
-          val newName = s"${matchedPart.name} (guessed)"
-          val updatedPart = bricksetPart.copy(name = newName, categories = matchedPart.categories)
-          (updatedPart, true)
-        } else {
-          val updatedPart = bricksetPart.copy(categories = matchedPart.categories)
-          (updatedPart, true)
-        }
+        val newName = s"${matchedPart.name} (guessed)"
+        val updatedPart = bricksetPart.copy(name = newName, categories = matchedPart.categories)
+        (updatedPart, true)
       case None =>
         val top5 = searchResults.take(5)
-        val commonPrefix = findCommonCategoryPrefix(top5.map(_._1))
+        val commonPrefix = PartNameIndex.findCommonCategoryPrefix(top5.map(_._1))
         if (commonPrefix.nonEmpty) {
           val bestMatch = top5.find { case (part, _) =>
             part.categories.zip(commonPrefix).forall { case (cat, prefixCat) => cat == prefixCat }
@@ -187,26 +177,5 @@ object PartsProcessor {
           }
         }
     }
-  }
-
-  private def findCommonCategoryPrefix(parts: List[LegoPart]): List[Category] = {
-    if (parts.isEmpty) return Nil
-
-    val hierarchies = parts.map(_.categories)
-    if (hierarchies.exists(_.isEmpty)) return Nil
-
-    val minLength = hierarchies.map(_.length).min
-    if (minLength == 0) return Nil
-
-    val commonPrefix = (0 until minLength).collect { i =>
-      val categoryAtPosition = hierarchies.map(_.apply(i))
-      if (categoryAtPosition.forall(_ == categoryAtPosition.head)) {
-        Some(categoryAtPosition.head)
-      } else {
-        None
-      }
-    }.takeWhile(_.isDefined).flatten
-
-    commonPrefix.toList
   }
 }

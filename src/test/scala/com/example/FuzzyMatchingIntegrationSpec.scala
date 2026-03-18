@@ -79,13 +79,7 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
     exactMatch.isDefined shouldBe true
     val matchedPart = exactMatch.get._1
     
-    val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
-    val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
-    
-    val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords) &&
-                          matchedPart.categories == searchResults.head._1.categories
-    
-    val newName = if (useTaxonomyName) s"${matchedPart.name} (guessed)" else bricksetPart.name
+    val newName = s"${matchedPart.name} (guessed)"
     
     newName shouldBe "1×4 Tile (guessed)"
   }
@@ -100,18 +94,7 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
     
     val searchResults = PartNameIndex.search(index, "BRICK 2")
     
-    val bricksetPart = LegoPart(
-      partNumber = "99999",
-      name = "",
-      categories = Nil,
-      sequenceNumber = 0,
-      altNumbers = Set.empty,
-      imageUrl = None,
-      imageWidth = None,
-      imageHeight = None
-    )
-    
-    val commonPrefix = findCommonCategoryPrefix(searchResults.take(5).map(_._1))
+    val commonPrefix = PartNameIndex.findCommonCategoryPrefix(searchResults.take(5).map(_._1))
     commonPrefix.nonEmpty shouldBe true
     
     val bestMatch = searchResults.take(5).find { case (part, _) =>
@@ -119,7 +102,7 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
     }
     
     bestMatch.isDefined shouldBe true
-    val newName = bestMatch.map(p => s"${p._1.name} (guessed)").getOrElse(bricksetPart.name)
+    val newName = bestMatch.map(p => s"${p._1.name} (guessed)").getOrElse("")
     
     newName should include("(guessed)")
   }
@@ -158,36 +141,9 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
     exactMatch.isDefined shouldBe true
     val matchedPart = exactMatch.get._1
     
-    val taxonomyWords = PartNameIndex.tokenize(matchedPart.name).toSet
-    val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
-    
-    val useTaxonomyName = taxonomyWords.subsetOf(coloredPartWords) &&
-                          matchedPart.categories == searchResults.head._1.categories
-    
-    val newName = if (useTaxonomyName) s"${matchedPart.name} (guessed)" else bricksetPart.name
+    val newName = s"${matchedPart.name} (guessed)"
     
     newName shouldBe "2×2 Round Tile (guessed)"
     newName should include("(guessed)")
-  }
-  
-  private def findCommonCategoryPrefix(parts: List[LegoPart]): List[Category] = {
-    if (parts.isEmpty) return Nil
-
-    val hierarchies = parts.map(_.categories)
-    if (hierarchies.exists(_.isEmpty)) return Nil
-
-    val minLength = hierarchies.map(_.length).min
-    if (minLength == 0) return Nil
-
-    val commonPrefix = (0 until minLength).collect { i =>
-      val categoryAtPosition = hierarchies.map(_.apply(i))
-      if (categoryAtPosition.forall(_ == categoryAtPosition.head)) {
-        Some(categoryAtPosition.head)
-      } else {
-        None
-      }
-    }.takeWhile(_.isDefined).flatten
-
-    commonPrefix.toList
   }
 }

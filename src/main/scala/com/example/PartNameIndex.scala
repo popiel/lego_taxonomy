@@ -1,6 +1,10 @@
 package com.example
 
 object PartNameIndex {
+  private val dimensionPattern = raw"(\d+\s*x\s*\d+(?:\s*x\s*\d+)*)".r
+  private val letterBeforePeriod = raw"([a-zA-Z]+)\.(.+)".r
+  private val numberDashAlpha = raw"(\d+)-([a-zA-Z]+)".r
+
   def buildIndex(parts: List[LegoPart]): Map[String, Set[LegoPart]] = {
     parts.flatMap { part =>
       val words = tokenize(part.name)
@@ -36,15 +40,34 @@ object PartNameIndex {
     }.find { case (_, count) => count == queryWords.size }.map(_._1)
   }
 
+  def findCommonCategoryPrefix(parts: List[LegoPart]): List[Category] = {
+    if (parts.isEmpty) return Nil
+
+    val hierarchies = parts.map(_.categories)
+    if (hierarchies.exists(_.isEmpty)) return Nil
+
+    val minLength = hierarchies.map(_.length).min
+    if (minLength == 0) return Nil
+
+    val commonPrefix = (0 until minLength).collect { i =>
+      val categoryAtPosition = hierarchies.map(_.apply(i))
+      if (categoryAtPosition.forall(_ == categoryAtPosition.head)) {
+        Some(categoryAtPosition.head)
+      } else {
+        None
+      }
+    }.takeWhile(_.isDefined).flatten
+
+    commonPrefix.toList
+  }
+
   def tokenize(name: String): List[String] = {
-    val dimensionPattern = raw"(\d+\s*x\s*\d+(?:\s*x\s*\d+)*)".r
     val step1 = name.replace("\u00D7", "x").toLowerCase
     val step2 = dimensionPattern.replaceAllIn(step1, m => m.matched.replaceAll("\\s+", ""))
 
     val words = step2.split("\\s+").filter(_.nonEmpty).flatMap { word =>
       val noComma = word.stripSuffix(",")
 
-      val letterBeforePeriod = raw"([a-zA-Z]+)\.(.+)".r
       val splitWord = noComma match {
         case letterBeforePeriod(before, after) =>
           List(s"$before.", after.toLowerCase)
@@ -53,7 +76,6 @@ object PartNameIndex {
       }
 
       splitWord.flatMap { w =>
-        val numberDashAlpha = raw"(\d+)-([a-zA-Z]+)".r
         w match {
           case numberDashAlpha(num, alpha) =>
             List(num, alpha)
