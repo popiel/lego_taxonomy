@@ -213,4 +213,48 @@ class PartNameIndexSpec extends AnyFlatSpec with Matchers {
     
     taxonomyWords.subsetOf(bricksetWords) shouldBe false
   }
+
+  // Tests for regression when brickset part name was removed (made empty)
+  // The fuzzy matching should use ColoredPart.name instead of bricksetPart.name
+  it should "match when brickset part name is empty but ColoredPart name has value" in {
+    // This simulates the case after the BricksetPartFetcher change where:
+    // - bricksetPart.name = "" (empty)
+    // - coloredPart.name = "FLAT TILE 1X4, NO. 115"
+    // The matching should use the ColoredPart name, not the empty brickset name
+    
+    val coloredPartName = "FLAT TILE 1X4, NO. 115"  // This is what should be used for matching
+    val taxonomyWords = PartNameIndex.tokenize("1×4 Tile").toSet
+    
+    // Using coloredPartName (not empty brickset name) should work
+    val bricksetWords = PartNameIndex.tokenize(coloredPartName).toSet
+    taxonomyWords.subsetOf(bricksetWords) shouldBe true
+  }
+
+  it should "fail matching when using empty string for brickset name" in {
+    // This test verifies that using an empty string would fail
+    // (which is what was happening before the fix)
+    val emptyBricksetName = ""
+    val taxonomyWords = PartNameIndex.tokenize("1×4 Tile").toSet
+    
+    val bricksetWords = PartNameIndex.tokenize(emptyBricksetName).toSet
+    taxonomyWords.subsetOf(bricksetWords) shouldBe false
+  }
+
+  it should "match 37096 case with ColoredPart name after brickset name removal" in {
+    // The specific 37096 case:
+    // - ColoredPart.name = "FLAT TILE 1X4, NO. 115"
+    // - bricksetPart.name = "" (now empty due to change)
+    // - Taxonomy part 2431 = "1×4 Tile"
+    // 
+    // After fix, we use ColoredPart.name for matching, not bricksetPart.name
+    
+    val coloredPartName = "FLAT TILE 1X4, NO. 115"
+    val taxonomyPartName = "1×4 Tile"
+    
+    val coloredPartWords = PartNameIndex.tokenize(coloredPartName).toSet
+    val taxonomyWords = PartNameIndex.tokenize(taxonomyPartName).toSet
+    
+    // This should work: taxonomy words are subset of colored part words
+    taxonomyWords.subsetOf(coloredPartWords) shouldBe true
+  }
 }

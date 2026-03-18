@@ -64,7 +64,7 @@ object PartsProcessor {
                         val bricksetPart = bricksetMap.get(mp.coloredPart.partNumber).flatten
                         bricksetPart match {
                           case Some(bp) if bp.categories.isEmpty =>
-                            taxonomyDataHolder.ask(ref => TaxonomyDataHolder.SearchByName(bp.name, ref))(searchTimeout, scheduler).collect {
+                            taxonomyDataHolder.ask(ref => TaxonomyDataHolder.SearchByName(mp.coloredPart.name, ref))(searchTimeout, scheduler).collect {
                               case sr: TaxonomyDataHolder.SearchResult => (mp.coloredPart.partNumber, sr)
                             }
                           case _ =>
@@ -82,7 +82,7 @@ object PartsProcessor {
                             bricksetPart match {
                               case Some(bp) if bp.categories.isEmpty =>
                                 val searchResult = searchMap.getOrElse(mp.coloredPart.partNumber, TaxonomyDataHolder.SearchResult(Nil))
-                                val (updatedPart, guessed) = inferCategories(bp, searchResult.parts, matchedPartsWithBrickset)
+                                val (updatedPart, guessed) = inferCategories(bp, mp.coloredPart.name, searchResult.parts, matchedPartsWithBrickset)
                                 MatchedPart(mp.coloredPart, Some(updatedPart), guessed)
                               case Some(bp) =>
                                 MatchedPart(mp.coloredPart, Some(bp), false)
@@ -120,12 +120,12 @@ object PartsProcessor {
     }
   }
 
-  private def inferCategories(bricksetPart: LegoPart, searchResults: List[(LegoPart, Int)], matchedParts: List[MatchedPart]): (LegoPart, Boolean) = {
+  private def inferCategories(bricksetPart: LegoPart, coloredPartName: String, searchResults: List[(LegoPart, Int)], matchedParts: List[MatchedPart]): (LegoPart, Boolean) = {
     if (searchResults.isEmpty) {
       return (bricksetPart, false)
     }
 
-    val bricksetWords = PartNameIndex.tokenize(bricksetPart.name).toSet
+    val bricksetWords = PartNameIndex.tokenize(coloredPartName).toSet
 
     val exactMatch = searchResults.find { case (part, _) =>
       val partWords = PartNameIndex.tokenize(part.name).toSet
