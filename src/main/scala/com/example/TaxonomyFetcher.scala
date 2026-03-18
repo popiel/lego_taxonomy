@@ -52,7 +52,7 @@ object TaxonomyFetcher {
     message match {
       case FetchResponse(CachedDownloader.Downloaded(url, content)) =>
         if (url == rootUrl) {
-          val cats = HtmlParser.parseRootHtml(content)
+          val cats = TaxonomyParser.parseRootHtml(content)
           context.log.info(s"Fetched root with ${cats.size} categories")
           cats.foreach { cat =>
             val catUrl = s"https://brickarchitect.com/parts/category-${cat.number}?&retired=1&partstyle=1"
@@ -67,7 +67,7 @@ object TaxonomyFetcher {
           val newState = state.copy(pendingFetches = state.pendingFetches - 1 + cats.size)
           collecting(newState, downloader, cache)
         } else if (url.startsWith("https://brickarchitect.com/parts/category-")) {
-          val (cats, parts) = HtmlParser.parseCategoryHtml(url, content)
+          val (cats, parts) = TaxonomyParser.parseCategoryHtml(url, content)
           val newCats = state.allCategories ++ cats
           val newParts = state.allParts ++ parts
           val newPending = state.pendingFetches - 1
@@ -119,7 +119,7 @@ object TaxonomyFetcher {
         val partNum = url.substring("https://brickarchitect.com/parts/".length).split("\\?")(0)
         val enhancedParts = state.allParts.map { part =>
           if (part.partNumber == partNum) {
-            HtmlParser.enhancePart(part, content)
+            TaxonomyParser.enhancePart(part, content)
           } else {
             part
           }

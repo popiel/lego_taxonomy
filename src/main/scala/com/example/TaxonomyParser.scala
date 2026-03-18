@@ -5,7 +5,7 @@ import org.jsoup.nodes.Element
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-object HtmlParser {
+object TaxonomyParser {
 
   def enhancePart(legoPart: LegoPart, html: String): LegoPart = {
     val doc = Jsoup.parse(html)
