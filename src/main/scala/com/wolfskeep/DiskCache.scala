@@ -52,7 +52,7 @@ object DiskCache {
         val entry = CacheEntry(key, value, now)
         val newCache = cache + (key -> entry)
         saveCache(entry)
-        context.log.info(s"Inserted key: $key")
+        // context.log.info(s"Inserted key: $key")
         running(newCache)
 
       case Fetch(key, replyTo) =>

@@ -61,7 +61,18 @@ object BricksetPartFetcher {
           case CachedDownloader.Downloaded(_, bricklinkHtml) =>
             val itemNumber = parseBricklinkItem(bricklinkHtml)
             val matchedPart = itemNumber.flatMap(matchBricklinkItemToTaxonomy(_, taxonomy))
-            matchedPart.orElse {
+            matchedPart.map { tp =>
+              LegoPart(
+                partNumber = s"${tp.partNumber} (modified)",
+                name = s"${tp.name} (modified)",
+                categories = tp.categories,
+                sequenceNumber = tp.sequenceNumber,
+                altNumbers = tp.altNumbers,
+                imageUrl = imageUrl,
+                imageWidth = tp.imageWidth,
+                imageHeight = tp.imageHeight
+              )
+            }.orElse {
               Some(LegoPart(
                 partNumber = "",
                 name = "",

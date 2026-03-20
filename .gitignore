@@ -26,4 +26,5 @@ parts.csv
 src/test/resources/*-sorted.csv
 src/test/resources/simple/
 src/test/resources/pacer/
+bricklink_ids.json
 nul
