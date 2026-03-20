@@ -215,7 +215,7 @@ class StudioIoReader {
     partCounts.map { case ((partNumber, color), qty) =>
       val colorName = colorMap.getOrElse(color.toInt, s"Color$color")
       val partName = partDescriptions.getOrElse(partNumber, "")
-      ColoredPart(partNumber, colorName, qty, partName)
+      ColoredPart(partNumber, colorName, qty, partName, None)
     }.toList.sortBy(p => (p.partNumber, p.color))
   }
 

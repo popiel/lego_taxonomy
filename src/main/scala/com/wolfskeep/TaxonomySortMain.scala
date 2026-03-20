@@ -33,9 +33,8 @@ object TaxonomySortMain {
     val cache = system.systemActorOf(DiskCache(), "cache")
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
     val bricklinkActor = system.systemActorOf(BricklinkActor(cache), "bricklink-actor")
-    val bricksetPartCache = system.systemActorOf(BricksetPartCache(downloader, bricklinkActor), "brickset-part-cache")
 
-    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, bricksetPartCache), "parts-processor")
+    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor), "parts-processor")
 
     val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy

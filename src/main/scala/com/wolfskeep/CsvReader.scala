@@ -32,6 +32,7 @@ class CsvReader {
     val colorIndex = findColumnIndex(headers, Seq("color", "Colour", "ColorName"))
     val quantityIndex = findColumnIndex(headers, Seq("quantity", "Qty"))
     val nameIndex = findColumnIndex(headers, Seq("name", "ElementName", "PartName"))
+    val elementIdIndex = findColumnIndex(headers, Seq("ElementId", "ElementID", "element_id"))
 
     lines.tail.flatMap { line =>
       val fields = parseCsvLine(line)
@@ -41,7 +42,8 @@ class CsvReader {
         quantity <- quantityIndex.flatMap(i => Try(fields(i).trim.toInt).toOption)
       } yield {
         val name = nameIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty).getOrElse("")
-        ColoredPart(partNumber, color, quantity, name)
+        val elementId = elementIdIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
+        ColoredPart(partNumber, color, quantity, name, elementId)
       }
     }
   }

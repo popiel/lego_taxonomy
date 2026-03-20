@@ -29,7 +29,8 @@ class FuzzyMatchingIntegrationSpec extends AnyFlatSpec with Matchers {
       partNumber = "37096",
       name = "FLAT TILE 1X4, NO. 115",
       color = "Earth Blue",
-      quantity = 1
+      quantity = 1,
+      elementId = None
     )
     
     val matchedPart = MatchedPart(coloredPart, Some(bricksetPart))

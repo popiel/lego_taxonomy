@@ -4,6 +4,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import akka.actor.typed.Scheduler
+import org.slf4j.{Logger, LoggerFactory}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import org.jsoup.Jsoup
@@ -12,18 +13,33 @@ import scala.collection.JavaConverters._
 
 object BricksetPartFetcher {
   val baseUrl = "https://brickset.com/parts"
+  private val log = LoggerFactory.getLogger(classOf[BricksetPartFetcher.type])
 
-  def fetchPartDetails(downloader: ActorRef[CachedDownloader.Command], partNumber: String, taxonomyParts: List[LegoPart], bricklinkActor: ActorRef[BricklinkActor.Command])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+  def fetchPartDetails(
+    downloader: ActorRef[CachedDownloader.Command],
+    partNumber: String,
+    elementId: Option[String],
+    taxonomyParts: List[LegoPart],
+    bricklinkActor: ActorRef[BricklinkActor.Command]
+  )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
     val url = s"$baseUrl?query=$partNumber"
     downloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
       case CachedDownloader.Downloaded(_, content) =>
-        parsePartDetails(partNumber, content, taxonomyParts, downloader, taxonomyParts, bricklinkActor)
+        parsePartDetails(partNumber, elementId, content, taxonomyParts, downloader, taxonomyParts, bricklinkActor)
       case CachedDownloader.Failed(_, reason) =>
         Future.successful(None)
     }
   }
 
-  def parsePartDetails(queryPartNumber: String, html: String, taxonomyParts: List[LegoPart], downloader: ActorRef[CachedDownloader.Command], taxonomy: List[LegoPart], bricklinkActor: ActorRef[BricklinkActor.Command])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+  def parsePartDetails(
+    queryPartNumber: String,
+    elementIdFromCsv: Option[String],
+    html: String,
+    taxonomyParts: List[LegoPart],
+    downloader: ActorRef[CachedDownloader.Command],
+    taxonomy: List[LegoPart],
+    bricklinkActor: ActorRef[BricklinkActor.Command]
+  )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
     val doc = Jsoup.parse(html)
     val article = doc.selectFirst("article.set")
     if (article == null) {
@@ -51,13 +67,15 @@ object BricksetPartFetcher {
       return Future.successful(None)
     }
 
-    val elementNumber = findElementNumber(html)
+    val resolvedElementId = elementIdFromCsv.orElse(findElementNumber(html))
     
-    elementNumber match {
+    resolvedElementId match {
       case Some(elemNum) =>
+        log.info(s"Using element number $elemNum for Brickset part $queryPartNumber")
         val bricklinkTimeout: Timeout = 15.seconds
         bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemNum, _))(bricklinkTimeout, scheduler).map {
           case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
+            log.info(s"BrickLink API returned itemNo=$itemNo, type=$itemType for element $elemNum")
             val matchedPart = matchBricklinkItemToTaxonomy(itemNo, taxonomy)
             matchedPart.map { tp =>
               LegoPart(
@@ -83,6 +101,7 @@ object BricksetPartFetcher {
               ))
             }
           case BricklinkActor.Failed(message) =>
+            log.warn(s"BrickLink API failed for element $elemNum: $message")
             Some(LegoPart(
               partNumber = "",
               name = "",

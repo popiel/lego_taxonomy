@@ -16,7 +16,8 @@ object PartsProcessor {
 
   def apply(
     taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command],
-    bricksetPartCache: ActorRef[BricksetPartCache.Command]
+    downloader: ActorRef[CachedDownloader.Command],
+    bricklinkActor: ActorRef[BricklinkActor.Command]
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
@@ -45,9 +46,9 @@ object PartsProcessor {
                   val sortedParts = matchedPartsWithoutBrickset.sorted
                   replyTo ! ProcessedParts(sortedParts)
                 } else {
-                  val bricksetTimeout: Timeout = Timeout(30.seconds)
+                  implicit val bricksetTimeout: Timeout = Timeout(30.seconds)
                   val bricksetFutures = unmatchedParts.map { mp =>
-                    bricksetPartCache.ask(BricksetPartCache.GetPart(mp.coloredPart.partNumber, parts, _))(bricksetTimeout, scheduler).map { bricksetPart =>
+                    BricksetPartFetcher.fetchPartDetails(downloader, mp.coloredPart.partNumber, mp.coloredPart.elementId, parts, bricklinkActor).map { bricksetPart =>
                       (mp.coloredPart.partNumber, bricksetPart)
                     }
                   }
