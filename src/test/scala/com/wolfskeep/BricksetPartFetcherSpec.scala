@@ -2,61 +2,52 @@ package com.wolfskeep
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
 
-  "findElementNumber" should "extract element number from Brickset HTML" in {
+  "BricksetPartFetcher" should "parse part details and extract element number from HTML" in {
     val html = scala.io.Source.fromResource("brickset/69038.html").mkString
-    val result = BricksetPartFetcher.findElementNumber(html)
+    val result = Await.result(
+      BricksetPartFetcher.parsePartDetails("69038", None, html),
+      1.seconds
+    )
     
-    result shouldBe Some("6331694")
+    result shouldBe defined
+    result.get.partNumber shouldBe "69038"
+    result.get.elementId shouldBe Some("6331694")
+    result.get.imageUrl shouldBe defined
+    result.get.imageUrl.get should include ("6331694.jpg")
   }
 
-  it should "return None for HTML without valid element number" in {
-    val html = "<html><body><div class='tags'><a href='/parts/design-123'>Design</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
+  it should "prefer elementId from CSV over HTML extraction" in {
+    val html = scala.io.Source.fromResource("brickset/69038.html").mkString
+    val result = Await.result(
+      BricksetPartFetcher.parsePartDetails("69038", Some("123456"), html),
+      1.seconds
+    )
     
-    result shouldBe None
+    result shouldBe defined
+    result.get.elementId shouldBe Some("123456")
   }
 
-  it should "return None when text is not numeric" in {
-    val html = "<html><body><div class='tags'><a href='/parts/123abc'>123abc</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
-    
-    result shouldBe None
-  }
-
-  it should "return None for HTML without div.tags" in {
-    val html = "<html><body><p>No tags here</p></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
-    
-    result shouldBe None
-  }
-
-  it should "skip links with category prefix" in {
-    val html = "<html><body><div class='tags'><a href='/parts/category-Plates'>Plates</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
-    
-    result shouldBe None
-  }
-
-  it should "skip links with platform prefix" in {
-    val html = "<html><body><div class='tags'><a href='/parts/platform-System'>System</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
+  it should "return None for HTML without article" in {
+    val html = "<html><body><p>No article</p></body></html>"
+    val result = Await.result(
+      BricksetPartFetcher.parsePartDetails("12345", None, html),
+      1.seconds
+    )
     
     result shouldBe None
   }
 
-  it should "skip links with year prefix" in {
-    val html = "<html><body><div class='tags'><a href='/parts/year-2020'>2020</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
-    
-    result shouldBe None
-  }
-
-  it should "skip links with colour prefix" in {
-    val html = "<html><body><div class='tags'><a href='/parts/colour-Red'>Red</a></div></body></html>"
-    val result = BricksetPartFetcher.findElementNumber(html)
+  it should "return None for HTML without element number or image" in {
+    val html = """<html><body><article class="set"></article></body></html>"""
+    val result = Await.result(
+      BricksetPartFetcher.parsePartDetails("12345", None, html),
+      1.seconds
+    )
     
     result shouldBe None
   }

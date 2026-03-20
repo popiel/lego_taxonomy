@@ -2,6 +2,7 @@ package com.wolfskeep
 
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.ActorContext
+import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, StatusCode}
@@ -18,6 +19,8 @@ import java.util.Base64
 import java.net.URLEncoder.encode
 import java.net.URI
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
+import akka.util.Timeout
 
 object BricklinkActor {
   case class BricklinkCredentials(
@@ -163,29 +166,27 @@ object BricklinkActor {
   private def running(credentials: BricklinkCredentials, cache: ActorRef[DiskCache.Command]): Behavior[Command] = {
     Behaviors.receive { (context, message) =>
       implicit val ec: ExecutionContext = context.executionContext
+      implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
+      implicit val timeout: Timeout = CacheTtlMs.milliseconds
 
       message match {
         case GetItem(itemType, itemNumber, replyTo) =>
           val cacheKey = s"bricklink:item:$itemType:$itemNumber"
-          context.messageAdapter[DiskCache.Response] { cacheResponse =>
-            WrappedCacheResponse(cacheKey, cacheResponse, replyTo)
-          } match {
-            case adapter: ActorRef[DiskCache.Response] =>
-              cache ! DiskCache.Fetch(cacheKey, adapter)
-            case _ =>
-              replyTo ! Failed("Failed to create cache adapter")
+          context.pipeToSelf(cache.ask(DiskCache.Fetch(cacheKey, _))) {
+            case Success(cacheResponse) => WrappedCacheResponse(cacheKey, cacheResponse, replyTo)
+            case Failure(ex) =>
+              replyTo ! Failed(s"Failed to fetch from cache: ${ex.getMessage}")
+              WrappedCacheResponse(cacheKey, DiskCache.NotFound(cacheKey), replyTo)
           }
           Behaviors.same
 
         case GetItemNumberByElementId(elementId, replyTo) =>
           val cacheKey = s"bricklink:mapping:$elementId"
-          context.messageAdapter[DiskCache.Response] { cacheResponse =>
-            WrappedCacheResponse(cacheKey, cacheResponse, replyTo)
-          } match {
-            case adapter: ActorRef[DiskCache.Response] =>
-              cache ! DiskCache.Fetch(cacheKey, adapter)
-            case _ =>
-              replyTo ! Failed("Failed to create cache adapter")
+          context.pipeToSelf(cache.ask(DiskCache.Fetch(cacheKey, _))) {
+            case Success(cacheResponse) => WrappedCacheResponse(cacheKey, cacheResponse, replyTo)
+            case Failure(ex) =>
+              replyTo ! Failed(s"Failed to fetch from cache: ${ex.getMessage}")
+              WrappedCacheResponse(cacheKey, DiskCache.NotFound(cacheKey), replyTo)
           }
           Behaviors.same
 

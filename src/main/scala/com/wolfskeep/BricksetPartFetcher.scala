@@ -15,17 +15,21 @@ object BricksetPartFetcher {
   val baseUrl = "https://brickset.com/parts"
   private val log = LoggerFactory.getLogger(classOf[BricksetPartFetcher.type])
 
+  case class BricksetPartResult(
+    partNumber: String,
+    elementId: Option[String],
+    imageUrl: Option[String]
+  )
+
   def fetchPartDetails(
     downloader: ActorRef[CachedDownloader.Command],
     partNumber: String,
-    elementId: Option[String],
-    taxonomyParts: List[LegoPart],
-    bricklinkActor: ActorRef[BricklinkActor.Command]
-  )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+    elementId: Option[String]
+  )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[BricksetPartResult]] = {
     val url = s"$baseUrl?query=$partNumber"
     downloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
       case CachedDownloader.Downloaded(_, content) =>
-        parsePartDetails(partNumber, elementId, content, taxonomyParts, downloader, taxonomyParts, bricklinkActor)
+        parsePartDetails(partNumber, elementId, content)
       case CachedDownloader.Failed(_, reason) =>
         Future.successful(None)
     }
@@ -34,12 +38,8 @@ object BricksetPartFetcher {
   def parsePartDetails(
     queryPartNumber: String,
     elementIdFromCsv: Option[String],
-    html: String,
-    taxonomyParts: List[LegoPart],
-    downloader: ActorRef[CachedDownloader.Command],
-    taxonomy: List[LegoPart],
-    bricklinkActor: ActorRef[BricklinkActor.Command]
-  )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+    html: String
+  ): Future[Option[BricksetPartResult]] = Future.successful {
     val doc = Jsoup.parse(html)
     val article = doc.selectFirst("article.set")
     if (article == null) {
@@ -51,85 +51,20 @@ object BricksetPartFetcher {
       Option(img.attr("src")).filter(_.nonEmpty)
     } else None
 
-    val metaDiv = article.selectFirst("div.meta")
-    val h1: Option[Element] = if (metaDiv != null) Option(metaDiv.selectFirst("h1")) else None
-    val name = h1 match {
-      case Some(element) =>
-        element.text().trim match {
-          case text if text.contains(": ") =>
-            text.substring(text.indexOf(": ") + 2).trim
-          case text => text.trim
-        }
-      case None => ""
-    }
+    val elementId = elementIdFromCsv.orElse(extractElementNumberFromHtml(html))
 
-    if (name.isEmpty && imageUrl.isEmpty) {
-      return Future.successful(None)
-    }
-
-    val resolvedElementId = elementIdFromCsv.orElse(findElementNumber(html))
-    
-    resolvedElementId match {
-      case Some(elemNum) =>
-        log.info(s"Using element number $elemNum for Brickset part $queryPartNumber")
-        val bricklinkTimeout: Timeout = 15.seconds
-        bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemNum, _))(bricklinkTimeout, scheduler).map {
-          case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
-            log.info(s"BrickLink API returned itemNo=$itemNo, type=$itemType for element $elemNum")
-            val matchedPart = matchBricklinkItemToTaxonomy(itemNo, taxonomy)
-            matchedPart.map { tp =>
-              LegoPart(
-                partNumber = tp.partNumber,
-                name = tp.name,
-                categories = tp.categories,
-                sequenceNumber = tp.sequenceNumber,
-                altNumbers = tp.altNumbers,
-                imageUrl = imageUrl,
-                imageWidth = tp.imageWidth,
-                imageHeight = tp.imageHeight
-              )
-            }.orElse {
-              Some(LegoPart(
-                partNumber = "",
-                name = "",
-                categories = Nil,
-                sequenceNumber = 0,
-                altNumbers = Set.empty,
-                imageUrl = imageUrl,
-                imageWidth = None,
-                imageHeight = None
-              ))
-            }
-          case BricklinkActor.Failed(message) =>
-            log.warn(s"BrickLink API failed for element $elemNum: $message")
-            Some(LegoPart(
-              partNumber = "",
-              name = "",
-              categories = Nil,
-              sequenceNumber = 0,
-              altNumbers = Set.empty,
-              imageUrl = imageUrl,
-              imageWidth = None,
-              imageHeight = None
-            ))
-        }
-      case None =>
-        Future.successful {
-          Some(LegoPart(
-            partNumber = "",
-            name = "",
-            categories = Nil,
-            sequenceNumber = 0,
-            altNumbers = Set.empty,
-            imageUrl = imageUrl,
-            imageWidth = None,
-            imageHeight = None
-          ))
-        }
+    if (imageUrl.isEmpty && elementId.isEmpty) {
+      None
+    } else {
+      Some(BricksetPartResult(
+        partNumber = queryPartNumber,
+        elementId = elementId,
+        imageUrl = imageUrl
+      ))
     }
   }
 
-  def findElementNumber(html: String): Option[String] = {
+  private def extractElementNumberFromHtml(html: String): Option[String] = {
     val doc = Jsoup.parse(html)
     val tagsDiv = doc.selectFirst("div.tags")
     Option(tagsDiv).flatMap { div =>
