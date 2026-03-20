@@ -28,6 +28,7 @@ object PartsProcessor {
       Behaviors.receiveMessage { message =>
         message match {
           case ProcessParts(coloredParts, replyTo) =>
+            logger.info(s"ProcessParts with ${coloredParts.size} input parts")
             val taxonomyTimeout: Timeout = Timeout(1.seconds)
             val taxonomyDataFuture = taxonomyDataHolder.ask(ref => TaxonomyDataHolder.GetTaxonomy(ref))(taxonomyTimeout, scheduler)
 
@@ -39,39 +40,27 @@ object PartsProcessor {
                 val (matched, unmatched) = matchByPartNumber(coloredParts, partMap)
 
                 if (unmatched.isEmpty) {
+                  logger.info(s"ProcessParts replying with ${matched.size} output parts")
                   replyTo ! ProcessedParts(matched.sorted)
                 } else {
                   implicit val bricksetTimeout: Timeout = Timeout(30.seconds)
                   
                   val resultFuture = for {
                     withBricksetData <- fetchBricksetDetails(unmatched, downloader)
-                    withCategories = withBricksetData.filter(_.legoPart.exists(_.categories.nonEmpty))
-                    withoutCategories = withBricksetData.filter(_.legoPart.forall(_.categories.isEmpty))
-                    finalMatched <- if (withoutCategories.isEmpty) {
-                      Future.successful(withCategories)
-                    } else {
-                      lookupBricklinkAndMatch(withoutCategories, parts, bricklinkActor).flatMap { bricklinkResults =>
-                        val stillWithoutCategories = bricklinkResults.filter(_.legoPart.forall(_.categories.isEmpty))
-                        val withNewCategories = bricklinkResults.filter(_.legoPart.exists(_.categories.nonEmpty))
-                        
-                        if (stillWithoutCategories.isEmpty) {
-                          Future.successful(withCategories ++ withNewCategories)
-                        } else {
-                          inferCategoriesByName(stillWithoutCategories, matched ++ withCategories ++ withNewCategories, taxonomyDataHolder, logger).map { withFuzzyMatch =>
-                            matched ++ withCategories ++ withNewCategories ++ withFuzzyMatch
-                          }
-                        }
-                      }
-                    }
-                  } yield finalMatched
+                    bricklinkResults <- lookupBricklinkAndMatch(withBricksetData, parts, bricklinkActor)
+                    (withBricklinkMatch, stillWithoutCategories) = bricklinkResults.partition(_.legoPart.exists(_.categories.nonEmpty))
+                    fuzzyMatched <- inferCategoriesByName(stillWithoutCategories, matched ++ withBricklinkMatch, taxonomyDataHolder, logger)
+                  } yield { matched ++ withBricklinkMatch ++ fuzzyMatched }
                   
                   resultFuture.onComplete {
                     case scala.util.Success(allMatched) =>
                       val sortedParts = allMatched.sorted
+                      logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
                       replyTo ! ProcessedParts(sortedParts)
                     case scala.util.Failure(ex) =>
                       logger.error(s"Failed to process parts: ${ex.getMessage}")
                       val sortedParts = (matched ++ unmatched).sorted
+                      logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
                       replyTo ! ProcessedParts(sortedParts)
                   }
                 }
@@ -104,21 +93,33 @@ object PartsProcessor {
     unmatchedParts: List[MatchedPart],
     downloader: ActorRef[CachedDownloader.Command]
   )(implicit timeout: Timeout, ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler): Future[List[MatchedPart]] = {
-    val futures: List[Future[MatchedPart]] = unmatchedParts.map { mp =>
-      BricksetPartFetcher.fetchPartDetails(
-        downloader,
-        mp.coloredPart.partNumber,
-        mp.coloredPart.elementId
-      ).map { resultOpt =>
-        resultOpt.map { result =>
-          val updatedColoredPart = mp.coloredPart.copy(
-            elementId = result.elementId.orElse(mp.coloredPart.elementId)
-          )
-          MatchedPart(updatedColoredPart, mp.legoPart, mp.categoriesGuessed)
-        }.getOrElse(mp)
+    if (unmatchedParts.isEmpty) Future.successful(Nil)
+    else {
+      val futures: List[Future[MatchedPart]] = unmatchedParts.map { mp =>
+        BricksetPartFetcher.fetchPartDetails(
+          downloader,
+          mp.coloredPart.partNumber,
+          mp.coloredPart.elementId
+        ).map { resultOpt =>
+          resultOpt.map { result =>
+            val updatedColoredPart = mp.coloredPart.copy(
+              elementId = result.elementId.orElse(mp.coloredPart.elementId)
+            )
+            MatchedPart(updatedColoredPart, Some(LegoPart(
+              partNumber = "", 
+              name = "", 
+              categories = Nil,
+              sequenceNumber = 0,
+              altNumbers = Set.empty,
+              imageUrl = result.imageUrl,
+              imageWidth = None,
+              imageHeight = None
+            )), false)
+          }.getOrElse(mp)
+        }
       }
+      Future.sequence(futures)
     }
-    Future.sequence(futures)
   }
 
   private def lookupBricklinkAndMatch(
@@ -136,8 +137,13 @@ object PartsProcessor {
         bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemId, _)).map {
           case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
             val taxonomyMatch = BricksetPartFetcher.matchBricklinkItemToTaxonomy(itemNo, taxonomyParts)
-            taxonomyMatch.map { matchedPart =>
-              MatchedPart(mp.coloredPart, Some(matchedPart), categoriesGuessed = false)
+            taxonomyMatch.map { tp =>
+              MatchedPart(
+                mp.coloredPart,
+                mp.legoPart.map { lp => tp.copy(/* partNumber = "", */ name = tp.name + " (modified)", imageUrl = lp.imageUrl, imageWidth = None, imageHeight = None) }
+                  .orElse(Some(tp)),
+                categoriesGuessed = false
+              )
             }.getOrElse(mp)
           case BricklinkActor.Failed(message) =>
             mp

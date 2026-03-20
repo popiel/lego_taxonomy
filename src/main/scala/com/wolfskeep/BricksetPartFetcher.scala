@@ -85,7 +85,7 @@ object BricksetPartFetcher {
     taxonomyParts.find(_.partNumber == itemNumber).orElse {
       val strippedNumber = stripTrailingLetters(itemNumber)
       if (strippedNumber != itemNumber) {
-        taxonomyParts.find(_.partNumber == strippedNumber)
+        taxonomyParts.find(_.partNumber == strippedNumber).map { _.copy(partNumber = itemNumber) }
       } else {
         None
       }
