@@ -13,17 +13,17 @@ object BricksetPartCache {
 
   private case class FetchedPart(partNumber: String, part: Option[LegoPart], replyTo: ActorRef[Option[LegoPart]]) extends Command
 
-  def apply(downloader: ActorRef[CachedDownloader.Command]): Behavior[Command] = {
+  def apply(downloader: ActorRef[CachedDownloader.Command], bricklinkActor: ActorRef[BricklinkActor.Command]): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: Scheduler = context.system.scheduler
       implicit val timeout: Timeout = 30.seconds
 
-      cached(Map.empty, downloader)
+      cached(Map.empty, downloader, bricklinkActor)
     }
   }
 
-  private def cached(parts: Map[String, LegoPart], downloader: ActorRef[CachedDownloader.Command]): Behavior[Command] = {
+  private def cached(parts: Map[String, LegoPart], downloader: ActorRef[CachedDownloader.Command], bricklinkActor: ActorRef[BricklinkActor.Command]): Behavior[Command] = {
     Behaviors.receive { (context, message) =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: Scheduler = context.system.scheduler
@@ -36,14 +36,14 @@ object BricksetPartCache {
               replyTo ! Some(part)
               Behaviors.same
             case None =>
-              val fetchResult = BricksetPartFetcher.fetchPartDetails(downloader, partNumber, taxonomyParts)
+              val fetchResult = BricksetPartFetcher.fetchPartDetails(downloader, partNumber, taxonomyParts, bricklinkActor)
               context.pipeToSelf(fetchResult) {
                 case scala.util.Success(fetchedPart: Option[LegoPart]) =>
                   FetchedPart(partNumber, fetchedPart, replyTo)
                 case scala.util.Failure(ex) =>
                   FetchedPart(partNumber, None, replyTo)
               }
-              cached(parts, downloader)
+              cached(parts, downloader, bricklinkActor)
           }
 
         case FetchedPart(partNumber, maybePart, replyTo) =>
@@ -51,7 +51,7 @@ object BricksetPartCache {
           maybePart match {
             case Some(part) =>
               val newParts = parts + (partNumber -> part)
-              cached(newParts, downloader)
+              cached(newParts, downloader, bricklinkActor)
             case None =>
               Behaviors.same
           }

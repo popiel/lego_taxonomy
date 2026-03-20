@@ -12,19 +12,18 @@ import scala.collection.JavaConverters._
 
 object BricksetPartFetcher {
   val baseUrl = "https://brickset.com/parts"
-  val bricklinkBaseUrl = "https://www.bricklink.com"
 
-  def fetchPartDetails(downloader: ActorRef[CachedDownloader.Command], partNumber: String, taxonomyParts: List[LegoPart])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+  def fetchPartDetails(downloader: ActorRef[CachedDownloader.Command], partNumber: String, taxonomyParts: List[LegoPart], bricklinkActor: ActorRef[BricklinkActor.Command])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
     val url = s"$baseUrl?query=$partNumber"
     downloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
       case CachedDownloader.Downloaded(_, content) =>
-        parsePartDetails(partNumber, content, taxonomyParts, downloader, taxonomyParts)
+        parsePartDetails(partNumber, content, taxonomyParts, downloader, taxonomyParts, bricklinkActor)
       case CachedDownloader.Failed(_, reason) =>
         Future.successful(None)
     }
   }
 
-  def parsePartDetails(queryPartNumber: String, html: String, taxonomyParts: List[LegoPart], downloader: ActorRef[CachedDownloader.Command], taxonomy: List[LegoPart])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
+  def parsePartDetails(queryPartNumber: String, html: String, taxonomyParts: List[LegoPart], downloader: ActorRef[CachedDownloader.Command], taxonomy: List[LegoPart], bricklinkActor: ActorRef[BricklinkActor.Command])(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[LegoPart]] = {
     val doc = Jsoup.parse(html)
     val article = doc.selectFirst("article.set")
     if (article == null) {
@@ -52,19 +51,18 @@ object BricksetPartFetcher {
       return Future.successful(None)
     }
 
-    val bricklinkUrl = findBricklinkUrl(html)
+    val elementNumber = findElementNumber(html)
     
-    bricklinkUrl match {
-      case Some(url) =>
-        val fetchUrl = if (url.startsWith("http")) url else s"$bricklinkBaseUrl$url"
-        downloader.ask(CachedDownloader.Fetch(fetchUrl, _)).map {
-          case CachedDownloader.Downloaded(_, bricklinkHtml) =>
-            val itemNumber = parseBricklinkItem(bricklinkHtml)
-            val matchedPart = itemNumber.flatMap(matchBricklinkItemToTaxonomy(_, taxonomy))
+    elementNumber match {
+      case Some(elemNum) =>
+        val bricklinkTimeout: Timeout = 15.seconds
+        bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemNum, _))(bricklinkTimeout, scheduler).map {
+          case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
+            val matchedPart = matchBricklinkItemToTaxonomy(itemNo, taxonomy)
             matchedPart.map { tp =>
               LegoPart(
-                partNumber = s"${tp.partNumber} (modified)",
-                name = s"${tp.name} (modified)",
+                partNumber = tp.partNumber,
+                name = tp.name,
                 categories = tp.categories,
                 sequenceNumber = tp.sequenceNumber,
                 altNumbers = tp.altNumbers,
@@ -84,7 +82,7 @@ object BricksetPartFetcher {
                 imageHeight = None
               ))
             }
-          case CachedDownloader.Failed(_, _) =>
+          case BricklinkActor.Failed(message) =>
             Some(LegoPart(
               partNumber = "",
               name = "",
@@ -112,50 +110,21 @@ object BricksetPartFetcher {
     }
   }
 
-  def findBricklinkUrl(html: String): Option[String] = {
+  def findElementNumber(html: String): Option[String] = {
     val doc = Jsoup.parse(html)
-    
-    val valueNewDl = doc.select("dl").asScala.find { dl =>
-      dl.text().contains("Value new")
+    val tagsDiv = doc.selectFirst("div.tags")
+    Option(tagsDiv).flatMap { div =>
+      div.select("a").asScala.find { a =>
+        val href = a.attr("href")
+        href.startsWith("/parts/") &&
+        !href.contains("/design-") &&
+        !href.contains("/platform-") &&
+        !href.contains("/category-") &&
+        !href.contains("/year-") &&
+        !href.contains("/colour-")
+      }.filter(a => a.text.forall(_.isDigit))
+      .map(_.text)
     }
-    
-    valueNewDl.flatMap { dl =>
-      val bricklinkLink = dl.select("a").asScala.find { a =>
-        a.attr("href").contains("bricklink.com")
-      }
-      bricklinkLink.map(_.attr("href"))
-    }
-  }
-
-  def parseBricklinkItem(html: String): Option[String] = {
-    val doc = Jsoup.parse(html)
-    
-    val h1 = doc.selectFirst("h1#item-name-title")
-    
-    if (h1 == null) return None
-    
-    val parent = h1.parent()
-    if (parent == null) return None
-    
-    var sibling = parent.nextElementSibling()
-    
-    while (sibling != null && sibling.tagName() != "span") {
-      sibling = sibling.nextElementSibling()
-    }
-    
-    if (sibling == null) return None
-    
-    val spanWithItemNo = sibling.text()
-    if (!spanWithItemNo.contains("Item No:")) return None
-    
-    val innerSpan = sibling.children().first()
-    val itemNumber = if (innerSpan != null) {
-      innerSpan.text().trim
-    } else {
-      return None
-    }
-    
-    if (itemNumber.nonEmpty) Some(itemNumber) else None
   }
 
   def matchBricklinkItemToTaxonomy(itemNumber: String, taxonomyParts: List[LegoPart]): Option[LegoPart] = {
