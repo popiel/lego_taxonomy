@@ -3,6 +3,7 @@ package com.wolfskeep
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.BeforeAndAfterAll
+import com.wolfskeep.rebrickable.RebrickableDataActor
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -32,6 +33,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
   private val downloader = spawn(CachedDownloader(cache))
   private val taxonomyDataHolder = spawn(TaxonomyDataHolder())
   private val bricklinkActor = spawn(BricklinkActor(cache))
+  private val rebrickableDataActor = spawn(RebrickableDataActor())
 
   taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(Set.empty, taxonomyParts)
   
@@ -49,7 +51,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
         )
       }
       
-      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor))
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor, rebrickableDataActor))
       val probe = createTestProbe[PartsProcessor.Response]()
       
       partsProcessor ! PartsProcessor.ProcessParts(matchingColoredParts, probe.ref)

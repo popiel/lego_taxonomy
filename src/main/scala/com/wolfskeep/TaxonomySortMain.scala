@@ -31,16 +31,17 @@ object TaxonomySortMain {
 
     val taxonomyDataHolder = system.systemActorOf(TaxonomyDataHolder(), "taxonomy-data-holder")
 
+    val rebrickableData = system.systemActorOf(RebrickableDataActor(), "rebrickable-data")
+
     val cache = system.systemActorOf(DiskCache(), "cache")
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
     val bricklinkActor = system.systemActorOf(BricklinkActor(cache), "bricklink-actor")
 
-    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor), "parts-processor")
+    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor, rebrickableData), "parts-processor")
 
     val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy
 
-    val rebrickableData = system.systemActorOf(RebrickableDataActor(), "rebrickable-data")
     val rebrickableFetcher = system.systemActorOf(RebrickableFetcherActor(rebrickableData), "rebrickable-fetcher")
     val rebrickableScheduler = system.systemActorOf(RebrickableSchedulerActor(rebrickableFetcher, rebrickableData), "rebrickable-scheduler")
     rebrickableScheduler ! RebrickableSchedulerActor.FetchRebrickable

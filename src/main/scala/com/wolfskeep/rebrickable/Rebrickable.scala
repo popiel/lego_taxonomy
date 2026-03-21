@@ -60,7 +60,21 @@ case class Data(
   sets: List[RebrickableSet],
   inventories: List[Inventory],
   inventoryParts: List[InventoryPart]
-)
+) {
+  lazy val elementIdToElement: Map[Long, Element] = elements.map(e => e.elementId -> e).toMap
+  lazy val partNumColorIdToElement: Map[(String, Int), Element] = elements.map(e => (e.partNum, e.colorId) -> e).toMap
+  lazy val partNumToPart: Map[String, Part] = parts.map(p => p.partNum -> p).toMap
+  lazy val colorIdToColor: Map[Int, Color] = colors.map(c => c.id -> c).toMap
+  lazy val setNumToSet: Map[String, RebrickableSet] = sets.map(s => s.setNum -> s).toMap
+  lazy val setNumToInventory: Map[String, List[Inventory]] = inventories.groupBy(_.setNum)
+  lazy val inventoryIdToParts: Map[Int, List[InventoryPart]] = inventoryParts.groupBy(_.inventoryId)
+
+  def elementIdToDesignId(elementId: Long): Option[String] =
+    elementIdToElement.get(elementId).flatMap(_.designId.map(_.toString))
+
+  def elementByPartNumAndColorId(partNum: String, colorId: Int): Option[Element] =
+    partNumColorIdToElement.get((partNum, colorId))
+}
 
 object Color {
   private val ZipFileName = "colors.csv.zip"

@@ -131,12 +131,9 @@ object Routes {
           throw new NoSuchElementException(s"No inventory found for ${set.setNum}")
         }
 
-      val partMap = data.parts.map(p => p.partNum -> p).toMap
-      val colorMap = data.colors.map(c => c.id -> c).toMap
-      val elementMap = data.elements
-        .groupBy(e => (e.partNum, e.colorId))
-        .view.mapValues(_.head)
-        .toMap
+      val partMap = data.partNumToPart
+      val colorMap = data.colorIdToColor
+      val elementMap = data.partNumColorIdToElement
 
       val coloredParts = data.inventoryParts
         .filter(p => p.inventoryId == inventory.id && !p.isSpare)
