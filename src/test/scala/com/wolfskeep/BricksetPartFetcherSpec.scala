@@ -52,12 +52,12 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
     result shouldBe None
   }
 
-  "matchBricklinkItemToTaxonomy" should "match exact item number" in {
+  "findBasePart" should "match exact item number" in {
     val taxonomyParts = List(
       LegoPart("30350bpb105", "Tile 2x3", List(Category("1", "Tile", None)), 1, Set.empty, None, None, None)
     )
     val taxonomyData = TaxonomyData(Set.empty, taxonomyParts)
-    val result = BricksetPartFetcher.matchBricklinkItemToTaxonomy("30350bpb105", taxonomyData)
+    val result = taxonomyData.findBasePart("30350bpb105")
     
     result shouldBe defined
     result.get.partNumber shouldBe "30350bpb105"
@@ -68,7 +68,7 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
       LegoPart("30350", "Tile 2x3", List(Category("1", "Tile", None)), 1, Set.empty, None, None, None)
     )
     val taxonomyData = TaxonomyData(Set.empty, taxonomyParts)
-    val result = BricksetPartFetcher.matchBricklinkItemToTaxonomy("30350bpb105", taxonomyData)
+    val result = taxonomyData.findBasePart("30350bpb105")
     
     result shouldBe defined
     result.get.partNumber shouldBe "30350bpb105"
@@ -81,7 +81,7 @@ class BricksetPartFetcherSpec extends AnyFlatSpec with Matchers {
       LegoPart("99999", "Unknown Part", List(Category("1", "Unknown", None)), 1, Set.empty, None, None, None)
     )
     val taxonomyData = TaxonomyData(Set.empty, taxonomyParts)
-    val result = BricksetPartFetcher.matchBricklinkItemToTaxonomy("30350bpb105", taxonomyData)
+    val result = taxonomyData.findBasePart("30350bpb105")
     
     result shouldBe None
   }

@@ -50,6 +50,18 @@ case class TaxonomyData(
     }.takeWhile(_.isDefined).flatten
     commonPrefix.toList
   }
+  
+  def findBasePart(itemNumber: String): Option[LegoPart] = 
+    findPart(itemNumber).orElse {
+      val baseNumber = itemNumber.takeWhile(_.isDigit)
+      if (baseNumber.nonEmpty && baseNumber != itemNumber) {
+        findPart(baseNumber).map { part =>
+          part.copy(partNumber = itemNumber, name = s"${part.name} (modified)")
+        }
+      } else {
+        None
+      }
+    }
 }
 
 object TaxonomyData {

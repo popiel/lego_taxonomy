@@ -198,7 +198,7 @@ object PartsProcessor {
         val elemId = mp.coloredPart.elementId.get
         bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemId, _)).map {
           case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
-            val taxonomyMatch = BricksetPartFetcher.matchBricklinkItemToTaxonomy(itemNo, taxonomyData)
+            val taxonomyMatch = taxonomyData.findBasePart(itemNo)
             val result = taxonomyMatch match {
               case Some(tp) =>
                 MatchedPart(

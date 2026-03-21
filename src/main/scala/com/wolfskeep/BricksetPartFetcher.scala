@@ -64,7 +64,7 @@ object BricksetPartFetcher {
       Option(img.attr("src")).filter(_.nonEmpty)
     } else None
 
-    val elementId = elementIdFromCsv.orElse(extractElementNumberFromHtml(html))
+    val elementId = elementIdFromCsv.orElse(extractElementNumberFromHtml(doc))
 
     if (imageUrl.isEmpty && elementId.isEmpty) {
       None
@@ -77,8 +77,7 @@ object BricksetPartFetcher {
     }
   }
 
-  private def extractElementNumberFromHtml(html: String): Option[String] = {
-    val doc = Jsoup.parse(html)
+  private def extractElementNumberFromHtml(doc: org.jsoup.nodes.Document): Option[String] = {
     val tagsDiv = doc.selectFirst("div.tags")
     Option(tagsDiv).flatMap { div =>
       div.select("a").asScala.find { a =>
@@ -94,24 +93,4 @@ object BricksetPartFetcher {
     }
   }
 
-  def matchBricklinkItemToTaxonomy(itemNumber: String, taxonomyData: TaxonomyData): Option[LegoPart] = {
-    taxonomyData.findPart(itemNumber).orElse {
-      val strippedNumber = stripTrailingLetters(itemNumber)
-      if (strippedNumber != itemNumber) {
-        taxonomyData.findPart(strippedNumber).map { part =>
-          part.copy(partNumber = itemNumber, name = s"${part.name} (modified)")
-        }
-      } else {
-        None
-      }
-    }
-  }
-
-  private def stripTrailingLetters(s: String): String = {
-    val regex = """^(\d+)[a-zA-Z].*""".r
-    s match {
-      case regex(digits) => digits
-      case _ => s
-    }
-  }
 }
