@@ -12,7 +12,7 @@ object TaxonomyFetcher {
   case class GetTaxonomy(replyTo: ActorRef[Response]) extends Command
 
   sealed trait Response
-  case class TaxonomyFetched(categories: Set[Category], parts: List[LegoPart]) extends Response
+  case class TaxonomyFetched(taxonomyData: TaxonomyData) extends Response
   // communicated when any fetch or ask fails
   case class Failed(reason: Throwable) extends Response
 
@@ -130,7 +130,7 @@ object TaxonomyFetcher {
         if (newPending == 0) {
           if (state.remainingParts.isEmpty) {
             context.log.info(s"All parts enhanced, completing")
-            state.replyTo ! TaxonomyFetched(state.allCategories, enhancedParts)
+            state.replyTo ! TaxonomyFetched(TaxonomyData(state.allCategories, enhancedParts))
             idle(downloader, cache)
           } else {
             context.log.info(s"Starting next batch, ${state.remainingParts.size} parts remaining")

@@ -12,7 +12,7 @@ import java.time.{LocalTime, LocalDateTime, ZonedDateTime, ZoneId}
 object TaxonomyScheduler {
   sealed trait Command
   case object FetchTaxonomy extends Command
-  private case class TaxonomyFetchedResult(categories: Set[Category], parts: List[LegoPart]) extends Command
+  private case class TaxonomyFetchedResult(taxonomyData: TaxonomyData) extends Command
   private case class TaxonomyFetchedFailed(reason: Throwable) extends Command
 
   private val FetchHour = 3
@@ -37,8 +37,8 @@ object TaxonomyScheduler {
         message match {
           case FetchTaxonomy =>
             context.ask(fetcherRef, TaxonomyFetcher.GetTaxonomy) {
-              case Success(TaxonomyFetcher.TaxonomyFetched(categories, parts)) =>
-                TaxonomyFetchedResult(categories, parts)
+              case Success(TaxonomyFetcher.TaxonomyFetched(taxonomyData)) =>
+                TaxonomyFetchedResult(taxonomyData)
               case Success(TaxonomyFetcher.Failed(reason)) =>
                 TaxonomyFetchedFailed(reason)
               case Failure(ex) =>
@@ -46,9 +46,9 @@ object TaxonomyScheduler {
             }
             Behaviors.same
 
-          case TaxonomyFetchedResult(categories, parts) =>
-            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(categories, parts)
-            context.log.info(s"Taxonomy fetched: ${categories.size} categories, ${parts.size} parts")
+          case TaxonomyFetchedResult(taxonomyData) =>
+            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(taxonomyData)
+            context.log.info(s"Taxonomy fetched: ${taxonomyData.categories.size} categories, ${taxonomyData.parts.size} parts")
             scheduleNextFetch()
             Behaviors.same
 

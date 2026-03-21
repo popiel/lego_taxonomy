@@ -60,13 +60,13 @@ object TaxonomySortMain {
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
     val probe = system.systemActorOf(Behaviors.receiveMessage[TaxonomyFetcher.Response] { msg =>
       msg match {
-        case TaxonomyFetcher.TaxonomyFetched(categories, parts) =>
-          val catCsv = buildCategoriesCsv(categories)
-          val partCsv = buildPartsCsv(parts)
+        case TaxonomyFetcher.TaxonomyFetched(taxonomyData) =>
+          val catCsv = buildCategoriesCsv(taxonomyData.categories)
+          val partCsv = buildPartsCsv(taxonomyData.parts)
           writeToFile("categories.csv", catCsv)
           writeToFile("parts.csv", partCsv)
           system.log.info("CSVs written to files, now processing inventories")
-          processInventories(parts, args)
+          processInventories(taxonomyData, args)
           system.log.info("Inventories processed, terminating system")
           system.terminate()
         case TaxonomyFetcher.Failed(reason) =>
@@ -105,20 +105,19 @@ object TaxonomySortMain {
 
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
-  def matchParts(coloredParts: List[ColoredPart], taxonomyParts: List[LegoPart]): List[MatchedPart] = {
-    val partMap = taxonomyParts.flatMap(part => (part.partNumber :: part.altNumbers.toList).map(_ -> part)).toMap
+  def matchParts(coloredParts: List[ColoredPart], taxonomyData: TaxonomyData): List[MatchedPart] = {
     val matchedParts = coloredParts.map { cp =>
-      val legoPart = partMap.get(cp.partNumber)
+      val legoPart = taxonomyData.findPart(cp.partNumber)
       MatchedPart(cp, legoPart)
     }
     matchedParts.sorted
   }
 
-  def processInventories(taxonomyParts: List[LegoPart], files: Array[String]): Unit = {
+  def processInventories(taxonomyData: TaxonomyData, files: Array[String]): Unit = {
     for (file <- files) {
       if (file.endsWith(".csv")) {
         val coloredParts = new CsvReader().readColoredParts(file)
-        val matchedParts = matchParts(coloredParts, taxonomyParts)
+        val matchedParts = matchParts(coloredParts, taxonomyData)
 
         val outputFile = file.replace(".csv", "-sorted.csv")
         val header = "quantity,color,partNumber_input,name_input,partNumber_taxonomy,name_taxonomy,category,category2,category3,category4\n"

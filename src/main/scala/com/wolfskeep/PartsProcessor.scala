@@ -42,11 +42,10 @@ object PartsProcessor {
             val taxonomyDataFuture = taxonomyDataHolder.ask(ref => TaxonomyDataHolder.GetTaxonomy(ref))(taxonomyTimeout, scheduler)
 
             taxonomyDataFuture.onComplete {
-              case scala.util.Success(data: TaxonomyDataHolder.TaxonomyData) =>
-                val parts = data.parts
-                val partMap = parts.flatMap(part => (part.partNumber :: part.altNumbers.toList).map(_ -> part)).toMap
+              case scala.util.Success(data: TaxonomyDataHolder.TaxonomyDataResponse) =>
+                val taxonomyData = data.taxonomyData
 
-                val (matched, unmatched) = matchByPartNumber(coloredParts, partMap)
+                val (matched, unmatched) = matchByPartNumber(coloredParts, taxonomyData.partNumberOrAltToPart)
 
                 if (unmatched.isEmpty) {
                   logger.info(s"ProcessParts replying with ${matched.size} output parts (Brickset: 0, BrickLink: 0, Rebrickable: 0)")
@@ -56,11 +55,11 @@ object PartsProcessor {
                   
                   val resultFuture = for {
                     (withBricksetData, telemetry) <- fetchBricksetDetails(unmatched, downloader)
-                    (rebrickableResults, t2) <- lookupRebrickableAndMatch(withBricksetData, parts, rebrickableActorRef, telemetry)
+                    (rebrickableResults, t2) <- lookupRebrickableAndMatch(withBricksetData, taxonomyData, rebrickableActorRef, telemetry)
                     (withRebrickableMatch, withoutMatch) = rebrickableResults.partition(_.legoPart.exists(_.categories.nonEmpty))
-                    (bricklinkResults, updatedTelemetry) <- lookupBricklinkAndMatch(withoutMatch, parts, bricklinkActor, t2)
+                    (bricklinkResults, updatedTelemetry) <- lookupBricklinkAndMatch(withoutMatch, taxonomyData, bricklinkActor, t2)
                     (withBricklinkMatch, stillWithoutCategories) = bricklinkResults.partition(_.legoPart.exists(_.categories.nonEmpty))
-                    fuzzyMatched <- inferCategoriesByName(stillWithoutCategories, matched ++ withBricklinkMatch, taxonomyDataHolder, logger)
+                    fuzzyMatched <- inferCategoriesByName(stillWithoutCategories, matched ++ withBricklinkMatch, taxonomyData, logger)
                   } yield { (matched ++ withRebrickableMatch ++ withBricklinkMatch ++ fuzzyMatched, updatedTelemetry) }
                   
                   resultFuture.onComplete {
@@ -144,7 +143,7 @@ object PartsProcessor {
 
   private def lookupRebrickableAndMatch(
     partsWithoutCategories: List[MatchedPart],
-    taxonomyParts: List[LegoPart],
+    taxonomyData: TaxonomyData,
     rebrickableActor: ActorRef[RebrickableDataActor.Command],
     telemetry: ProcessingTelemetry
   )(implicit timeout: Timeout, ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler): Future[(List[MatchedPart], ProcessingTelemetry)] = {
@@ -157,9 +156,7 @@ object PartsProcessor {
       rebrickableActor.ask(RebrickableDataActor.GetData(_))(rebrickableTimeout, scheduler).map { data =>
         val results = partsWithElementId.map { mp =>
           data.elementIdToDesignId(mp.coloredPart.elementId.get.toLong).flatMap { designIdStr =>
-            taxonomyParts.find(p => 
-              p.partNumber == designIdStr || p.altNumbers.contains(designIdStr)
-            )
+            taxonomyData.findPart(designIdStr)
           } match {
             case Some(tp) =>
               // val existingLegoPart = mp.legoPart.getOrElse(tp)
@@ -188,7 +185,7 @@ object PartsProcessor {
 
   private def lookupBricklinkAndMatch(
     partsWithoutCategories: List[MatchedPart],
-    taxonomyParts: List[LegoPart],
+    taxonomyData: TaxonomyData,
     bricklinkActor: ActorRef[BricklinkActor.Command],
     telemetry: ProcessingTelemetry
   )(implicit timeout: Timeout, ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler): Future[(List[MatchedPart], ProcessingTelemetry)] = {
@@ -201,7 +198,7 @@ object PartsProcessor {
         val elemId = mp.coloredPart.elementId.get
         bricklinkActor.ask(BricklinkActor.GetItemNumberByElementId(elemId, _)).map {
           case BricklinkActor.ItemMappingResponse(itemNo, itemType) =>
-            val taxonomyMatch = BricksetPartFetcher.matchBricklinkItemToTaxonomy(itemNo, taxonomyParts)
+            val taxonomyMatch = BricksetPartFetcher.matchBricklinkItemToTaxonomy(itemNo, taxonomyData)
             val result = taxonomyMatch match {
               case Some(tp) =>
                 MatchedPart(
@@ -233,15 +230,14 @@ object PartsProcessor {
   private def inferCategoriesByName(
     partsWithoutCategories: List[MatchedPart],
     matchedParts: List[MatchedPart],
-    taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command],
+    taxonomyData: TaxonomyData,
     logger: org.slf4j.Logger
   )(implicit timeout: Timeout, scheduler: akka.actor.typed.Scheduler, ec: ExecutionContext): Future[List[MatchedPart]] = {
     val futures: List[Future[MatchedPart]] = partsWithoutCategories.map { mp =>
-      val searchTimeout: Timeout = Timeout(5.seconds)
-      taxonomyDataHolder.ask(ref => TaxonomyDataHolder.SearchByName(mp.coloredPart.name, ref))(searchTimeout, scheduler).map {
-        case TaxonomyDataHolder.SearchResult(searchResults) =>
-          val (updatedMatchedPart, _) = inferCategories(mp, searchResults, matchedParts, logger)
-          updatedMatchedPart
+      Future {
+        val searchResults = taxonomyData.searchByName(mp.coloredPart.name)
+        val (updatedMatchedPart, _) = inferCategories(mp, searchResults, matchedParts, taxonomyData, logger)
+        updatedMatchedPart
       }
     }
     Future.sequence(futures)
@@ -251,12 +247,13 @@ object PartsProcessor {
     mp: MatchedPart,
     searchResults: List[(LegoPart, Int)],
     matchedParts: List[MatchedPart],
+    taxonomyData: TaxonomyData,
     logger: org.slf4j.Logger
   ): (MatchedPart, Boolean) = {
     val coloredPartName = mp.coloredPart.name
     
     logger.debug(s"Fuzzy matching: partNumber=${mp.coloredPart.partNumber}, name=$coloredPartName")
-    val wordsTokenized = PartNameIndex.tokenize(coloredPartName)
+    val wordsTokenized = TaxonomyData.tokenize(coloredPartName)
     logger.debug(s"  Tokenized: ${wordsTokenized.mkString(", ")}")
     logger.debug(s"  Top 5 fuzzy matches: ${searchResults.take(5).map { case (part, count) => s"${part.name} ($count)" }.mkString(", ")}")
 
@@ -267,7 +264,7 @@ object PartsProcessor {
     val bricksetWords = wordsTokenized.toSet
 
     val exactMatch = searchResults.find { case (part, _) =>
-      val partWords = PartNameIndex.tokenize(part.name).toSet
+      val partWords = TaxonomyData.tokenize(part.name).toSet
       partWords.subsetOf(bricksetWords)
     }
 
@@ -287,7 +284,7 @@ object PartsProcessor {
         (MatchedPart(mp.coloredPart, Some(updatedLegoPart), categoriesGuessed = true), true)
       case None =>
         val top5 = searchResults.take(5)
-        val commonPrefix = PartNameIndex.findCommonCategoryPrefix(top5.map(_._1))
+        val commonPrefix = taxonomyData.findCommonCategoryPrefix(top5.map(_._1))
         if (commonPrefix.nonEmpty) {
           val bestMatch = top5.find { case (part, _) =>
             part.categories.zip(commonPrefix).forall { case (cat, prefixCat) => cat == prefixCat }

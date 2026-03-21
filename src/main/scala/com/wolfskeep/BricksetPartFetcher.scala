@@ -94,11 +94,11 @@ object BricksetPartFetcher {
     }
   }
 
-  def matchBricklinkItemToTaxonomy(itemNumber: String, taxonomyParts: List[LegoPart]): Option[LegoPart] = {
-    taxonomyParts.find(_.partNumber == itemNumber).orElse {
+  def matchBricklinkItemToTaxonomy(itemNumber: String, taxonomyData: TaxonomyData): Option[LegoPart] = {
+    taxonomyData.findPart(itemNumber).orElse {
       val strippedNumber = stripTrailingLetters(itemNumber)
       if (strippedNumber != itemNumber) {
-        taxonomyParts.find(_.partNumber == strippedNumber).map { part =>
+        taxonomyData.findPart(strippedNumber).map { part =>
           part.copy(partNumber = itemNumber, name = s"${part.name} (modified)")
         }
       } else {

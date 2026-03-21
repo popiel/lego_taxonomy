@@ -35,7 +35,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
   private val bricklinkActor = spawn(BricklinkActor(cache))
   private val rebrickableDataActor = spawn(RebrickableDataActor())
 
-  taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(Set.empty, taxonomyParts)
+  taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
   
   Thread.sleep(100)
 
