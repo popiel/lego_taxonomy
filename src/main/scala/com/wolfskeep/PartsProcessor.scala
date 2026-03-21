@@ -140,7 +140,7 @@ object PartsProcessor {
             taxonomyMatch.map { tp =>
               MatchedPart(
                 mp.coloredPart,
-                mp.legoPart.map { lp => tp.copy(/* partNumber = "", */ name = tp.name + " (modified)", imageUrl = lp.imageUrl, imageWidth = None, imageHeight = None) }
+                mp.legoPart.map { lp => tp.copy(imageUrl = lp.imageUrl, imageWidth = None, imageHeight = None) }
                   .orElse(Some(tp)),
                 categoriesGuessed = false
               )
