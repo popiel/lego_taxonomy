@@ -26,12 +26,25 @@ object BricksetPartFetcher {
     partNumber: String,
     elementId: Option[String]
   )(implicit timeout: Timeout, scheduler: Scheduler, ec: scala.concurrent.ExecutionContext): Future[Option[BricksetPartResult]] = {
-    val url = s"$baseUrl?query=$partNumber"
-    downloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
-      case CachedDownloader.Downloaded(_, content) =>
-        parsePartDetails(partNumber, elementId, content)
-      case CachedDownloader.Failed(_, reason) =>
-        Future.successful(None)
+    
+    def tryFetch(url: String, finalPartNumber: String, finalElementId: Option[String]): Future[Option[BricksetPartResult]] = {
+      downloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
+        case CachedDownloader.Downloaded(_, content) =>
+          parsePartDetails(finalPartNumber, finalElementId, content)
+        case CachedDownloader.Failed(_, _) =>
+          Future.successful(None)
+      }
+    }
+
+    elementId match {
+      case Some(elemId) =>
+        tryFetch(s"$baseUrl?query=$elemId", partNumber, elementId).flatMap {
+          case Some(result) => Future.successful(Some(result))
+          case None =>
+            tryFetch(s"$baseUrl?query=$partNumber", partNumber, None)
+        }
+      case None =>
+        tryFetch(s"$baseUrl?query=$partNumber", partNumber, None)
     }
   }
 

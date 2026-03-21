@@ -19,6 +19,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import akka.stream.scaladsl.StreamConverters
 import java.io.{BufferedInputStream, InputStreamReader}
+import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableDataActor}
 
 object HttpServer {
   val HttpPort = 37080
@@ -27,12 +28,13 @@ object HttpServer {
 
   def start(
     partsProcessor: ActorRef[PartsProcessor.Command],
+    rebrickableDataActor: ActorRef[RebrickableDataActor.Command],
     actorSystem: ActorSystem[_]
   )(implicit ec: ExecutionContext, materializer: Materializer): Future[Http.ServerBinding] = {
     val sslContext = SslContextBuilder.buildSslContext()
     val httpsConnectionContext = ConnectionContext.https(sslContext)
 
-    val route = Routes.all(actorSystem, partsProcessor)
+    val route = Routes.all(actorSystem, partsProcessor, rebrickableDataActor)
 
     val classicSystem = actorSystem.classicSystem
     implicit val system = classicSystem
@@ -50,11 +52,11 @@ object HttpServer {
 object Routes {
   def all(
     actorSystem: ActorSystem[_],
-    partsProcessor: ActorRef[PartsProcessor.Command]
+    partsProcessor: ActorRef[PartsProcessor.Command],
+    rebrickableDataActor: ActorRef[RebrickableDataActor.Command]
   )(implicit ec: ExecutionContext, materializer: Materializer): Route = {
     implicit val scheduler: akka.actor.typed.Scheduler = actorSystem.scheduler
-    val cachedDownloader = actorSystem.systemActorOf(CachedDownloader(actorSystem.systemActorOf(DiskCache(), "disk-cache")), "cached-downloader")
-    
+
     concat(
       pathSingleSlash(redirect("/parts-sorter.html", StatusCodes.Found)),
       get {
@@ -67,13 +69,21 @@ object Routes {
           formField("setNumber".as[String].?) { setNumberOpt =>
             setNumberOpt match {
               case Some(setNumber) if setNumber.trim.nonEmpty =>
-                val processedParts: Future[(List[MatchedPart], String)] = fetchAndProcessFromBrickset(cachedDownloader, setNumber, partsProcessor)
-                
-                onSuccess(processedParts) { case (results, actualSetNumber) =>
+                val result = getSetInventory(rebrickableDataActor, setNumber)
+                  .recover { case ex: NoSuchElementException => (Nil, ex.getMessage) }
+                  .flatMap { case (coloredParts, setInfo) =>
+                    if (coloredParts.isEmpty) {
+                      Future.successful((Nil, setInfo))
+                    } else {
+                      processParts(coloredParts, partsProcessor, setInfo)
+                    }
+                  }
+
+                onSuccess(result) { case (results, setInfo) =>
                   complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
-                    partsSorterHtml(results, Some(s"Set inventory from Brickset.com for set $actualSetNumber"))))
+                    partsSorterHtml(results, Some(setInfo))))
                 }
-              
+
               case _ =>
                 fileUpload("inputFile") { case (fileInfo, byteSource) =>
                   implicit val timeout: Timeout = Timeout(10.seconds)
@@ -94,36 +104,66 @@ object Routes {
     )
   }
 
-  private def fetchAndProcessFromBrickset(
-    cachedDownloader: ActorRef[CachedDownloader.Command],
-    setNumber: String,
-    partsProcessor: ActorRef[PartsProcessor.Command]
-  )(implicit scheduler: akka.actor.typed.Scheduler, ec: ExecutionContext): Future[(List[MatchedPart], String)] = {
-    import akka.actor.typed.scaladsl.AskPattern._
-    implicit val timeout: Timeout = 30.seconds
-    
-    def tryFetch(num: String): Future[(List[MatchedPart], String)] = {
-      val url = s"https://brickset.com/exportscripts/inventory/$num"
-      cachedDownloader.ask(CachedDownloader.Fetch(url, _)).flatMap {
-        case CachedDownloader.Downloaded(_, content) =>
-          val coloredParts = new CsvReader().readColoredPartsFromString(content)
-          if (coloredParts.isEmpty) {
-            if (!num.endsWith("-1")) {
-              tryFetch(num + "-1")
-            } else {
-              Future.successful((Nil, num))
-            }
-          } else {
-            partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
-              case PartsProcessor.ProcessedParts(parts) => (parts, num)
-            }
-          }
-        case CachedDownloader.Failed(_, reason) =>
-          Future.failed(reason)
+  private def getSetInventory(
+    rebrickableDataActor: ActorRef[RebrickableDataActor.Command],
+    setNumber: String
+  )(implicit scheduler: akka.actor.typed.Scheduler, ec: ExecutionContext): Future[(List[ColoredPart], String)] = {
+    implicit val timeout: Timeout = Timeout(30.seconds)
+
+    rebrickableDataActor.ask(RebrickableDataActor.GetData(_)).map { data =>
+      val trimmedSetNumber = setNumber.trim
+
+      val setOpt = data.sets.find(_.setNum == trimmedSetNumber)
+        .orElse {
+          if (!trimmedSetNumber.endsWith("-1")) {
+            data.sets.find(_.setNum == s"$trimmedSetNumber-1")
+          } else None
+        }
+
+      val set = setOpt.getOrElse {
+        throw new NoSuchElementException(s"No set found for $trimmedSetNumber")
       }
+
+      val inventory = data.inventories
+        .filter(_.setNum == set.setNum)
+        .maxByOption(_.id)
+        .getOrElse {
+          throw new NoSuchElementException(s"No inventory found for ${set.setNum}")
+        }
+
+      val partMap = data.parts.map(p => p.partNum -> p).toMap
+      val colorMap = data.colors.map(c => c.id -> c).toMap
+      val elementMap = data.elements
+        .groupBy(e => (e.partNum, e.colorId))
+        .view.mapValues(_.head)
+        .toMap
+
+      val coloredParts = data.inventoryParts
+        .filter(p => p.inventoryId == inventory.id && !p.isSpare)
+        .map { invPart =>
+          ColoredPart(
+            partNumber = invPart.partNum,
+            color = colorMap.get(invPart.colorId).map(_.name).getOrElse(""),
+            quantity = invPart.quantity,
+            name = partMap.get(invPart.partNum).map(_.name).getOrElse(""),
+            elementId = elementMap.get((invPart.partNum, invPart.colorId)).map(_.elementId.toString)
+          )
+        }
+
+      (coloredParts, s"${set.setNum}: ${set.name}")
     }
-    
-    tryFetch(setNumber.trim)
+  }
+
+  private def processParts(
+    coloredParts: List[ColoredPart],
+    partsProcessor: ActorRef[PartsProcessor.Command],
+    setName: String
+  )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler): Future[(List[MatchedPart], String)] = {
+    implicit val timeout: Timeout = Timeout(30.seconds)
+    partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _)).map {
+      case PartsProcessor.ProcessedParts(matchedParts) =>
+        (matchedParts, setName)
+    }
   }
 
   private def processUploadedFile(byteSource: Source[ByteString, _])(implicit ec: ExecutionContext, materializer: Materializer): Future[List[ColoredPart]] = Future {
@@ -207,6 +247,10 @@ object Routes {
             color: #333;
             margin-bottom: 10px;
         }
+        .error-message {
+            color: #c00;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -231,7 +275,9 @@ object Routes {
 
     <div class="output-section">
         <h2>Output</h2>
-        ${if (results.isEmpty) {
+        ${if (results.isEmpty && isErrorMessage(sourceMessage)) {
+            s"""<p class="error-message"><h2>${escapeHtml(sourceMessage.get)}</h2></p>"""
+        } else if (results.isEmpty) {
             """<p class="no-results">Enter a LEGO Set Number or upload a CSV file to see sorted results.</p>"""
         } else {
             val sourceHtml = sourceMessage.map(msg => s"""<p class="file-name">${escapeHtml(msg)}</p>""").getOrElse("")
@@ -318,5 +364,11 @@ object Routes {
       .replace(">", "&gt;")
       .replace("\"", "&quot;")
       .replace("'", "&#39;")
+  }
+
+  private def isErrorMessage(sourceMessage: Option[String]): Boolean = {
+    sourceMessage.exists { msg =>
+      msg.startsWith("No set found for") || msg.startsWith("No inventory found for")
+    }
   }
 }

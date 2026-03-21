@@ -49,7 +49,7 @@ object TaxonomySortMain {
     import akka.stream.Materializer
     implicit val materializer: Materializer = Materializer(system)
 
-    val bindingFuture = HttpServer.start(partsProcessor, system)
+    val bindingFuture = HttpServer.start(partsProcessor, rebrickableData, system)
 
     Await.result(system.whenTerminated, Duration.Inf)
     System.exit(0)

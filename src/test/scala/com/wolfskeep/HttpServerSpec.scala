@@ -11,6 +11,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.matchers.should.Matchers
+import com.wolfskeep.rebrickable.{Data, RebrickableDataActor}
 
 import akka.util.Timeout
 import scala.concurrent.duration._
@@ -40,7 +41,23 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
     3.seconds
   )
 
-  val route: Route = Routes.all(typedSystem, partsProcessor)
+  val rebrickableDataActor: ActorRef[RebrickableDataActor.Command] = Await.result(
+    typedSystem.ask[ActorRef[RebrickableDataActor.Command]](replyTo => SpawnProtocol.Spawn(
+      behavior = Behaviors.receiveMessage[RebrickableDataActor.Command] {
+        case RebrickableDataActor.GetData(replyTo) =>
+          replyTo ! Data(Nil, Nil, Nil, Nil, Nil, Nil)
+          Behaviors.same
+        case _ =>
+          Behaviors.same
+      },
+      name = "rebrickableDataActor",
+      props = Props.empty,
+      replyTo = replyTo
+    )),
+    3.seconds
+  )
+
+  val route: Route = Routes.all(typedSystem, partsProcessor, rebrickableDataActor)
 
   "HttpServer routes" must {
     
