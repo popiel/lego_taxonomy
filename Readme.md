@@ -3,12 +3,17 @@
 This is a tool to sort model parts lists
 according to the taxonomy in https://brickarchitect.com/parts/.
 
-
 ## Features
 
 * Upload parts lists in CSV or Studio .io format (auto-detected)
-* Look up set inventories by Brickset set number
+* Look up set inventories by LEGO set number
 * Parts sorted according to the taxonomy from https://brickarchitect.com/parts/
+
+* Taxonomy is cached locally and updated every 24 hours
+  * data fetch via website scraping
+* LEGO set and parts catalog (via Rebrickable) is cached locally and updated every 24 hours
+  * data fetch via bulk downloads
+* Modified (e.g. pattern printed) part images downloaded on demand from Brickset and cached locally
 
 ### Running in Web Server Mode
 
