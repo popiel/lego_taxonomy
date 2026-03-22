@@ -61,5 +61,29 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       response.parts.size should === (matchingColoredParts.size)
       response.parts.forall(_.legoPart.isDefined) should be (true)
     }
+    
+    "preserve ColoredPart name, color, quantity, and partNumber through processSinglePart" in {
+      val coloredPartWithDetails = ColoredPart(
+        partNumber = "3001",
+        name = "2x4 Brick",
+        color = "Red",
+        quantity = 5,
+        elementId = Some("6331694")
+      )
+      
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor, rebrickableDataActor))
+      val probe = createTestProbe[PartsProcessor.Response]()
+      
+      partsProcessor ! PartsProcessor.ProcessParts(List(coloredPartWithDetails), probe.ref)
+      
+      val response = probe.expectMessageType[PartsProcessor.ProcessedParts](10.seconds)
+      
+      response.parts.size should === (1)
+      val result = response.parts.head
+      result.coloredPart.partNumber should === ("3001")
+      result.coloredPart.name should === ("2x4 Brick")
+      result.coloredPart.color should === ("Red")
+      result.coloredPart.quantity should === (5)
+    }
   }
 }
