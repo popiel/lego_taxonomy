@@ -7,7 +7,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import com.wolfskeep.rebrickable.{RebrickableDataActor, RebrickableFetcherActor, RebrickableSchedulerActor}
+import com.wolfskeep.rebrickable.{RebrickableHolder, RebrickableFetcherActor, RebrickableSchedulerActor}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
@@ -29,9 +29,9 @@ object TaxonomySortMain {
 
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system", config)
 
-    val taxonomyDataHolder = system.systemActorOf(TaxonomyDataHolder(), "taxonomy-data-holder")
+    val taxonomyDataHolder = system.systemActorOf(TaxonomyHolder(), "taxonomy-data-holder")
 
-    val rebrickableData = system.systemActorOf(RebrickableDataActor(), "rebrickable-data")
+    val rebrickableData = system.systemActorOf(RebrickableHolder(), "rebrickable-data")
 
     val cache = system.systemActorOf(DiskCache(), "cache")
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")

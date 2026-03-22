@@ -33,7 +33,7 @@ object RebrickableFetcherActor {
     "inventory_parts.csv.zip"
   )
 
-  def apply(dataActor: ActorRef[RebrickableDataActor.Command]): Behavior[Command] = Behaviors.setup { context =>
+  def apply(dataActor: ActorRef[RebrickableHolder.Command]): Behavior[Command] = Behaviors.setup { context =>
     implicit val system = context.system.classicSystem
     implicit val materializer: Materializer = Materializer(context)
     implicit val ec: ExecutionContext = context.executionContext
@@ -148,12 +148,12 @@ object RebrickableFetcherActor {
           data.sets.size: Integer, data.inventories.size: Integer, data.inventoryParts.size: Integer
         )
 
-        dataActor ! RebrickableDataActor.SetColors(data.colors)
-        dataActor ! RebrickableDataActor.SetParts(data.parts)
-        dataActor ! RebrickableDataActor.SetElements(data.elements)
-        dataActor ! RebrickableDataActor.SetSets(data.sets)
-        dataActor ! RebrickableDataActor.SetInventories(data.inventories)
-        dataActor ! RebrickableDataActor.SetInventoryParts(data.inventoryParts)
+        dataActor ! RebrickableHolder.SetColors(data.colors)
+        dataActor ! RebrickableHolder.SetParts(data.parts)
+        dataActor ! RebrickableHolder.SetElements(data.elements)
+        dataActor ! RebrickableHolder.SetSets(data.sets)
+        dataActor ! RebrickableHolder.SetInventories(data.inventories)
+        dataActor ! RebrickableHolder.SetInventoryParts(data.inventoryParts)
 
         Behaviors.same
 
@@ -166,36 +166,36 @@ object RebrickableFetcherActor {
     }
   }
 
-  private def updateDataActor(fileName: String, dataActor: ActorRef[RebrickableDataActor.Command]): Unit = {
+  private def updateDataActor(fileName: String, dataActor: ActorRef[RebrickableHolder.Command]): Unit = {
     fileName match {
       case "colors.csv.zip" =>
         Color.fromZip() match {
-          case colors if colors.nonEmpty => dataActor ! RebrickableDataActor.SetColors(colors)
+          case colors if colors.nonEmpty => dataActor ! RebrickableHolder.SetColors(colors)
           case _ =>
         }
       case "parts.csv.zip" =>
         Part.fromZip() match {
-          case parts if parts.nonEmpty => dataActor ! RebrickableDataActor.SetParts(parts)
+          case parts if parts.nonEmpty => dataActor ! RebrickableHolder.SetParts(parts)
           case _ =>
         }
       case "elements.csv.zip" =>
         Element.fromZip() match {
-          case elements if elements.nonEmpty => dataActor ! RebrickableDataActor.SetElements(elements)
+          case elements if elements.nonEmpty => dataActor ! RebrickableHolder.SetElements(elements)
           case _ =>
         }
       case "sets.csv.zip" =>
         RebrickableSet.fromZip() match {
-          case sets if sets.nonEmpty => dataActor ! RebrickableDataActor.SetSets(sets)
+          case sets if sets.nonEmpty => dataActor ! RebrickableHolder.SetSets(sets)
           case _ =>
         }
       case "inventories.csv.zip" =>
         Inventory.fromZip() match {
-          case inventories if inventories.nonEmpty => dataActor ! RebrickableDataActor.SetInventories(inventories)
+          case inventories if inventories.nonEmpty => dataActor ! RebrickableHolder.SetInventories(inventories)
           case _ =>
         }
       case "inventory_parts.csv.zip" =>
         InventoryPart.fromZip() match {
-          case inventoryParts if inventoryParts.nonEmpty => dataActor ! RebrickableDataActor.SetInventoryParts(inventoryParts)
+          case inventoryParts if inventoryParts.nonEmpty => dataActor ! RebrickableHolder.SetInventoryParts(inventoryParts)
           case _ =>
         }
     }

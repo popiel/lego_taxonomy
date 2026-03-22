@@ -19,7 +19,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import akka.stream.scaladsl.StreamConverters
 import java.io.{BufferedInputStream, InputStreamReader}
-import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableDataActor}
+import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableHolder}
 
 object HttpServer {
   val HttpPort = 37080
@@ -28,7 +28,7 @@ object HttpServer {
 
   def start(
     partsProcessor: ActorRef[PartsProcessor.Command],
-    rebrickableDataActor: ActorRef[RebrickableDataActor.Command],
+    rebrickableDataActor: ActorRef[RebrickableHolder.Command],
     actorSystem: ActorSystem[_]
   )(implicit ec: ExecutionContext, materializer: Materializer): Future[Http.ServerBinding] = {
     val sslContext = SslContextBuilder.buildSslContext()
@@ -53,19 +53,19 @@ object Routes {
   def all(
     actorSystem: ActorSystem[_],
     partsProcessor: ActorRef[PartsProcessor.Command],
-    rebrickableDataActor: ActorRef[RebrickableDataActor.Command]
+    rebrickableDataActor: ActorRef[RebrickableHolder.Command]
   )(implicit ec: ExecutionContext, materializer: Materializer): Route = {
     implicit val scheduler: akka.actor.typed.Scheduler = actorSystem.scheduler
 
     concat(
-      pathSingleSlash(redirect("/parts-sorter.html", StatusCodes.Found)),
+      pathSingleSlash(redirect("/parts-sorter", StatusCodes.Found)),
       get {
-        path("parts-sorter.html") {
+        path("parts-sorter") {
           complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, partsSorterHtml(Nil, None)))
         }
       },
       post {
-        path("parts-sorter.html") {
+        path("parts-sorter") {
           formField("setNumber".as[String].?) { setNumberOpt =>
             setNumberOpt match {
               case Some(setNumber) if setNumber.trim.nonEmpty =>
@@ -105,12 +105,12 @@ object Routes {
   }
 
   private def getSetInventory(
-    rebrickableDataActor: ActorRef[RebrickableDataActor.Command],
+    rebrickableDataActor: ActorRef[RebrickableHolder.Command],
     setNumber: String
   )(implicit scheduler: akka.actor.typed.Scheduler, ec: ExecutionContext): Future[(List[ColoredPart], String)] = {
     implicit val timeout: Timeout = Timeout(30.seconds)
 
-    rebrickableDataActor.ask(RebrickableDataActor.GetData(_)).map { data =>
+    rebrickableDataActor.ask(RebrickableHolder.GetData(_)).map { data =>
       val trimmedSetNumber = setNumber.trim
 
       val setOpt = data.sets.find(_.setNum == trimmedSetNumber)
@@ -258,7 +258,7 @@ object Routes {
 
     <div class="input-section">
         <h2>Input</h2>
-        <form method="POST" action="/parts-sorter.html" enctype="multipart/form-data" id="uploadForm">
+        <form method="POST" action="/parts-sorter" enctype="multipart/form-data" id="uploadForm">
             <div style="margin-bottom: 15px;">
                 <label for="setNumber">LEGO Set Number:</label><br>
                 <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">
@@ -303,8 +303,8 @@ object Routes {
                           .toInt
 
                         results.map { mp =>
-                        val name_taxonomy = mp.legoPart.map(_.name).getOrElse("")
-                        val partNumber_taxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
+                        val nameTaxonomy = mp.legoPart.map(_.name).getOrElse("")
+                        val partNumberTaxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
                         val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
                         val guessedMarker = if (mp.categoriesGuessed && catNames.nonEmpty) " (guessed)" else ""
                         val legoPart = mp.legoPart
@@ -323,8 +323,8 @@ object Routes {
                             <td>${escapeHtml(mp.coloredPart.color)}</td>
                             <td>${escapeHtml(mp.coloredPart.partNumber)}</td>
                             <td>${escapeHtml(mp.coloredPart.name)}</td>
-                            <td>${escapeHtml(partNumber_taxonomy)}</td>
-                            <td>${escapeHtml(name_taxonomy)}</td>
+                            <td>${escapeHtml(partNumberTaxonomy)}</td>
+                            <td>${escapeHtml(nameTaxonomy)}</td>
                             <td>${imageHtml}</td>
                             <td>${escapeHtml(catNames.headOption.getOrElse(""))}$guessedMarker</td>
                             <td>${escapeHtml(catNames.lift(1).getOrElse(""))}</td>

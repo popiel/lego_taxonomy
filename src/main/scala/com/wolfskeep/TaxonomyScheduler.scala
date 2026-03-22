@@ -18,7 +18,7 @@ object TaxonomyScheduler {
   private val FetchHour = 3
   private val FetchMinute = 0
 
-  def apply(fetcherRef: ActorRef[TaxonomyFetcher.Command], taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command]): Behavior[Command] = {
+  def apply(fetcherRef: ActorRef[TaxonomyFetcher.Command], taxonomyDataHolder: ActorRef[TaxonomyHolder.Command]): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
@@ -47,7 +47,7 @@ object TaxonomyScheduler {
             Behaviors.same
 
           case TaxonomyFetchedResult(taxonomyData) =>
-            taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(taxonomyData)
+            taxonomyDataHolder ! TaxonomyHolder.SetTaxonomy(taxonomyData)
             context.log.info(s"Taxonomy fetched: ${taxonomyData.categories.size} categories, ${taxonomyData.parts.size} parts")
             scheduleNextFetch()
             Behaviors.same

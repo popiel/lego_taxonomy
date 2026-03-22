@@ -7,7 +7,7 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import com.wolfskeep.rebrickable.RebrickableDataActor
+import com.wolfskeep.rebrickable.RebrickableHolder
 
 object PartsProcessor {
   sealed trait Command
@@ -17,9 +17,9 @@ object PartsProcessor {
   case class ProcessedParts(parts: List[MatchedPart]) extends Response
 
   def apply(
-    taxonomyDataHolder: ActorRef[TaxonomyDataHolder.Command],
+    taxonomyDataHolder: ActorRef[TaxonomyHolder.Command],
     downloader: ActorRef[CachedDownloader.Command],
-    rebrickableDataActor: ActorRef[RebrickableDataActor.Command]
+    rebrickableDataActor: ActorRef[RebrickableHolder.Command]
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
@@ -32,10 +32,10 @@ object PartsProcessor {
           case ProcessParts(coloredParts, replyTo) =>
             logger.info(s"ProcessParts with ${coloredParts.size} input parts")
             val taxonomyTimeout: Timeout = Timeout(1.seconds)
-            val taxonomyDataFuture = taxonomyDataHolder.ask(ref => TaxonomyDataHolder.GetTaxonomy(ref))(taxonomyTimeout, scheduler)
+            val taxonomyDataFuture = taxonomyDataHolder.ask(ref => TaxonomyHolder.GetTaxonomy(ref))(taxonomyTimeout, scheduler)
 
             taxonomyDataFuture.onComplete {
-              case scala.util.Success(data: TaxonomyDataHolder.TaxonomyDataResponse) =>
+              case scala.util.Success(data: TaxonomyHolder.TaxonomyDataResponse) =>
                 val taxonomyData = data.taxonomyData
 
                 val (matched, unmatched) = coloredParts.map(part => MatchedPart(part, taxonomyData.findPart(part.partNumber), false)).partition(_.legoPart.nonEmpty)
@@ -45,7 +45,7 @@ object PartsProcessor {
                   replyTo ! ProcessedParts(matched.sorted)
                 } else {
                   implicit val rebrickableTimeout: Timeout = Timeout(30.seconds)
-                  val rebrickableDataFuture = rebrickableActorRef.ask(RebrickableDataActor.GetData(_))(rebrickableTimeout, scheduler)
+                  val rebrickableDataFuture = rebrickableActorRef.ask(RebrickableHolder.GetData(_))(rebrickableTimeout, scheduler)
                   
                   rebrickableDataFuture.onComplete {
                     case scala.util.Success(rebrickableData) =>

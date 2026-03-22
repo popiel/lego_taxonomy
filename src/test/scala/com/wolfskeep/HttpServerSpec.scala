@@ -11,7 +11,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.matchers.should.Matchers
-import com.wolfskeep.rebrickable.{Data, RebrickableDataActor}
+import com.wolfskeep.rebrickable.{Data, RebrickableHolder}
 
 import akka.util.Timeout
 import scala.concurrent.duration._
@@ -41,10 +41,10 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
     3.seconds
   )
 
-  val rebrickableDataActor: ActorRef[RebrickableDataActor.Command] = Await.result(
-    typedSystem.ask[ActorRef[RebrickableDataActor.Command]](replyTo => SpawnProtocol.Spawn(
-      behavior = Behaviors.receiveMessage[RebrickableDataActor.Command] {
-        case RebrickableDataActor.GetData(replyTo) =>
+  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] = Await.result(
+    typedSystem.ask[ActorRef[RebrickableHolder.Command]](replyTo => SpawnProtocol.Spawn(
+      behavior = Behaviors.receiveMessage[RebrickableHolder.Command] {
+        case RebrickableHolder.GetData(replyTo) =>
           replyTo ! Data(Nil, Nil, Nil, Nil, Nil, Nil)
           Behaviors.same
         case _ =>
@@ -61,15 +61,15 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
 
   "HttpServer routes" must {
     
-    "redirect root to parts-sorter.html" in {
+    "redirect root to parts-sorter" in {
       Get("/") ~> route ~> check {
         status should ===(StatusCodes.Found)
-        header("Location").map(_.value) should ===(Some("/parts-sorter.html"))
+        header("Location").map(_.value) should ===(Some("/parts-sorter"))
       }
     }
     
-    "serve parts-sorter.html with description and form" in {
-      Get("/parts-sorter.html") ~> route ~> check {
+    "serve parts-sorter with description and form" in {
+      Get("/parts-sorter") ~> route ~> check {
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
         val responseBody = entityAs[String]
@@ -78,7 +78,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("brickarchitect.com")
         responseBody should include("""<input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">""")
         responseBody should include("""<input type="file" name="inputFile" id="inputFile" accept=".csv,.io">""")
-        responseBody should include("""<form method="POST" action="/parts-sorter.html" enctype="multipart/form-data" id="uploadForm">""")
+        responseBody should include("""<form method="POST" action="/parts-sorter" enctype="multipart/form-data" id="uploadForm">""")
       }
     }
     
@@ -96,7 +96,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         )
       )
       
-      Post("/parts-sorter.html", formData) ~> route ~> check {
+      Post("/parts-sorter", formData) ~> route ~> check {
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
         val responseBody = entityAs[String]
@@ -128,7 +128,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         )
       )
       
-      Post("/parts-sorter.html", formData) ~> route ~> check {
+      Post("/parts-sorter", formData) ~> route ~> check {
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
         val responseBody = entityAs[String]
@@ -140,7 +140,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
     }
     
     "handle request without file part" in {
-      Post("/parts-sorter.html") ~> route ~> check {
+      Post("/parts-sorter") ~> route ~> check {
         handled shouldBe false
       }
     }

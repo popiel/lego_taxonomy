@@ -3,7 +3,7 @@ package com.wolfskeep.rebrickable
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 
-object RebrickableDataActor {
+object RebrickableHolder {
   sealed trait Command
   case class SetColors(colors: List[Color]) extends Command
   case class SetParts(parts: List[Part]) extends Command

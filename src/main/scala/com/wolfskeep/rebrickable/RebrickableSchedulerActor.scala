@@ -22,7 +22,7 @@ object RebrickableSchedulerActor {
 
   def apply(
     fetcherRef: ActorRef[RebrickableFetcherActor.Command],
-    dataActor: ActorRef[RebrickableDataActor.Command]
+    dataActor: ActorRef[RebrickableHolder.Command]
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext

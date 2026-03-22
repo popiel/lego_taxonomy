@@ -3,7 +3,7 @@ package com.wolfskeep
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.BeforeAndAfterAll
-import com.wolfskeep.rebrickable.RebrickableDataActor
+import com.wolfskeep.rebrickable.RebrickableHolder
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -31,10 +31,10 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
 
   private val cache = spawn(DiskCache())
   private val downloader = spawn(CachedDownloader(cache))
-  private val taxonomyDataHolder = spawn(TaxonomyDataHolder())
-  private val rebrickableDataActor = spawn(RebrickableDataActor())
+  private val taxonomyDataHolder = spawn(TaxonomyHolder())
+  private val rebrickableDataActor = spawn(RebrickableHolder())
 
-  taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
+  taxonomyDataHolder ! TaxonomyHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
   
   Thread.sleep(100)
 

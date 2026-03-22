@@ -3,7 +3,7 @@ package com.wolfskeep
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 
-object TaxonomyDataHolder {
+object TaxonomyHolder {
   sealed trait Command
   case class SetTaxonomy(taxonomyData: TaxonomyData) extends Command
   case class GetTaxonomy(replyTo: ActorRef[Response]) extends Command
