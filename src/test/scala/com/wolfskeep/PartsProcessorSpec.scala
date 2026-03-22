@@ -32,7 +32,6 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
   private val cache = spawn(DiskCache())
   private val downloader = spawn(CachedDownloader(cache))
   private val taxonomyDataHolder = spawn(TaxonomyDataHolder())
-  private val bricklinkActor = spawn(BricklinkActor(cache))
   private val rebrickableDataActor = spawn(RebrickableDataActor())
 
   taxonomyDataHolder ! TaxonomyDataHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
@@ -51,7 +50,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
         )
       }
       
-      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor, rebrickableDataActor))
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor))
       val probe = createTestProbe[PartsProcessor.Response]()
       
       partsProcessor ! PartsProcessor.ProcessParts(matchingColoredParts, probe.ref)
@@ -71,7 +70,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
         elementId = Some("6331694")
       )
       
-      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, bricklinkActor, rebrickableDataActor))
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor))
       val probe = createTestProbe[PartsProcessor.Response]()
       
       partsProcessor ! PartsProcessor.ProcessParts(List(coloredPartWithDetails), probe.ref)

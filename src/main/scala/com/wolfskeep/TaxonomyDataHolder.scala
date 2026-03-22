@@ -7,11 +7,9 @@ object TaxonomyDataHolder {
   sealed trait Command
   case class SetTaxonomy(taxonomyData: TaxonomyData) extends Command
   case class GetTaxonomy(replyTo: ActorRef[Response]) extends Command
-  case class SearchByName(query: String, replyTo: ActorRef[Response]) extends Command
 
   sealed trait Response
   case class TaxonomyDataResponse(taxonomyData: TaxonomyData) extends Response
-  case class SearchResult(parts: List[(LegoPart, Int)]) extends Response
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     idle(None)
@@ -32,11 +30,6 @@ object TaxonomyDataHolder {
           case Some(data) => replyTo ! TaxonomyDataResponse(data)
           case None => replyTo ! TaxonomyDataResponse(TaxonomyData(Set.empty, Nil))
         }
-        Behaviors.same
-
-      case SearchByName(query, replyTo) =>
-        val results = taxonomyData.map(_.searchByName(query)).getOrElse(Nil)
-        replyTo ! SearchResult(results)
         Behaviors.same
     }
   }
