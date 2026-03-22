@@ -46,11 +46,11 @@ Given a parts list in "summary.csv" run:
 ./run.sh summary.csv
 ```
 
-depending on exactly which platform (Windows, Mac, Linux, whatever) you're running on.
-
 The system then outputs a new file "summary-sorted.csv"
 with the parts in taxonomy order.
 Any parts that could not be matched against the taxonomy are listed at the end.
+
+Multiple files can be processed in one run; just list each as arguments to the run.
 
 ### Development notes
 
