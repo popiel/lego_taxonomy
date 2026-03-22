@@ -20,7 +20,7 @@ according to the taxonomy in https://brickarchitect.com/parts/.
 To run the web server:
 
 ```
-sbt run -- -web
+./run.sh -web
 ```
 
 This starts:
@@ -41,9 +41,10 @@ This tool also supports command-line processing in CSV format,
 supporting both Studio model info export,
 and Brickset set inventories.
 
-Given a parts list in "summary.csv" run either:
-* sbt run summary.csv
-* sbt "run summary.csv"
+Given a parts list in "summary.csv" run:
+```
+./run.sh summary.csv
+```
 
 depending on exactly which platform (Windows, Mac, Linux, whatever) you're running on.
 
