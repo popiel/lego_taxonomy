@@ -102,8 +102,8 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         val responseBody = entityAs[String]
         responseBody should include("Uploaded file: test.csv")
         responseBody should include("<table>")
-        responseBody should include("<th>quantity</th>")
-        responseBody should include("<th>input partNumber</th>")
+        responseBody should include("<th>category</th>")
+        responseBody should include("<th>partNumber</th>")
         responseBody should include("<td>2</td>")
         responseBody should include("<td>Blue</td>")
         responseBody should include("<td>3001</td>")

@@ -3,10 +3,11 @@ package com.wolfskeep
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.BeforeAndAfterAll
-import com.wolfskeep.rebrickable.RebrickableHolder
+import com.wolfskeep.rebrickable.{RebrickableHolder, LDrawImageFetcher, LDrawImageFetcherTrait}
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext
 
 class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with BeforeAndAfterAll {
   
@@ -33,6 +34,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
   private val downloader = spawn(CachedDownloader(cache))
   private val taxonomyDataHolder = spawn(TaxonomyHolder())
   private val rebrickableDataActor = spawn(RebrickableHolder())
+  private val ldrawImageFetcher = new LDrawImageFetcher()(system)
 
   taxonomyDataHolder ! TaxonomyHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
   
@@ -50,7 +52,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
         )
       }
       
-      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor))
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor, ldrawImageFetcher))
       val probe = createTestProbe[PartsProcessor.Response]()
       
       partsProcessor ! PartsProcessor.ProcessParts(matchingColoredParts, probe.ref)
@@ -70,7 +72,7 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
         elementId = Some("6331694")
       )
       
-      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor))
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor, ldrawImageFetcher))
       val probe = createTestProbe[PartsProcessor.Response]()
       
       partsProcessor ! PartsProcessor.ProcessParts(List(coloredPartWithDetails), probe.ref)
@@ -83,6 +85,36 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       result.coloredPart.name should === ("2x4 Brick")
       result.coloredPart.color should === ("Red")
       result.coloredPart.quantity should === (5)
+    }
+
+    "still match taxonomy when image fetcher throws an exception" in {
+      val throwingImageFetcher = new LDrawImageFetcherTrait {
+        def ensureDownloaded(colorId: Int)(implicit ec: ExecutionContext): Boolean = {
+          throw new RuntimeException("Simulated image download failure")
+        }
+        def hasImageInZip(colorId: Int, partNumber: String): Boolean = false
+      }
+
+      val coloredPart = ColoredPart(
+        partNumber = "3001",
+        name = "2x4 Brick",
+        color = "Red",
+        quantity = 1,
+        elementId = Some("6331694")
+      )
+      
+      val partsProcessor = spawn(PartsProcessor(taxonomyDataHolder, downloader, rebrickableDataActor, throwingImageFetcher))
+      val probe = createTestProbe[PartsProcessor.Response]()
+      
+      partsProcessor ! PartsProcessor.ProcessParts(List(coloredPart), probe.ref)
+      
+      val response = probe.expectMessageType[PartsProcessor.ProcessedParts](10.seconds)
+      
+      response.parts.size should === (1)
+      val result = response.parts.head
+      result.coloredPart.partNumber should === ("3001")
+      result.legoPart.isDefined should be (true)
+      result.legoPart.get.partNumber should === ("3001")
     }
   }
 }

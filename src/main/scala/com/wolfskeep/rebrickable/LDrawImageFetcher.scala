@@ -12,7 +12,12 @@ import akka.util.ByteString
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.{FiniteDuration, DurationInt}
 
-class LDrawImageFetcher(implicit val system: ActorSystem[_]) {
+trait LDrawImageFetcherTrait {
+  def ensureDownloaded(colorId: Int)(implicit ec: ExecutionContext): Boolean
+  def hasImageInZip(colorId: Int, partNumber: String): Boolean
+}
+
+class LDrawImageFetcher(implicit val system: ActorSystem[_]) extends LDrawImageFetcherTrait {
   private val BaseUrl = "https://cdn.rebrickable.com/media/downloads/ldraw"
   private val Timeout: FiniteDuration = 5.minutes
 

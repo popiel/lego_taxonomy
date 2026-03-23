@@ -7,7 +7,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import com.wolfskeep.rebrickable.{RebrickableHolder, RebrickableFetcherActor, RebrickableSchedulerActor}
+import com.wolfskeep.rebrickable.{RebrickableHolder, RebrickableFetcherActor, RebrickableSchedulerActor, LDrawImageFetcher}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
@@ -36,7 +36,8 @@ object TaxonomySortMain {
     val cache = system.systemActorOf(DiskCache(), "cache")
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
 
-    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, rebrickableData), "parts-processor")
+    val ldrawImageFetcher = new LDrawImageFetcher()(system)
+    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, rebrickableData, ldrawImageFetcher), "parts-processor")
 
     val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy

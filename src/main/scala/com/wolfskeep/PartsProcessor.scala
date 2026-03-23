@@ -9,7 +9,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Try
 import com.wolfskeep.rebrickable.RebrickableHolder
-import com.wolfskeep.rebrickable.LDrawImageFetcher
+import com.wolfskeep.rebrickable.LDrawImageFetcherTrait
 
 object PartsProcessor {
   sealed trait Command
@@ -21,14 +21,14 @@ object PartsProcessor {
   def apply(
     taxonomyDataHolder: ActorRef[TaxonomyHolder.Command],
     downloader: ActorRef[CachedDownloader.Command],
-    rebrickableDataActor: ActorRef[RebrickableHolder.Command]
+    rebrickableDataActor: ActorRef[RebrickableHolder.Command],
+    ldrawImageFetcher: LDrawImageFetcherTrait
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
       val logger = context.log
       val rebrickableActorRef = rebrickableDataActor
-      val ldrawImageFetcher = new LDrawImageFetcher()(context.system)
       
       Behaviors.receiveMessage { message =>
         message match {
@@ -96,7 +96,7 @@ object PartsProcessor {
     taxonomyData: TaxonomyData,
     rebrickableData: com.wolfskeep.rebrickable.Data,
     downloader: ActorRef[CachedDownloader.Command],
-    ldrawImageFetcher: LDrawImageFetcher
+    ldrawImageFetcher: LDrawImageFetcherTrait
   )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, logger: org.slf4j.Logger): Future[MatchedPart] = {
     val coloredPart = matchedPart.coloredPart
     val originalElementId = coloredPart.elementId
@@ -114,7 +114,7 @@ object PartsProcessor {
       .orElse(designIdOpt.flatMap(taxonomyData.findBasePart))
 
     // Try to find LDraw image from Rebrickable first
-    val ldImageUrl = findPartImageUrl(coloredPart, colorNameToId, ldrawImageFetcher)
+    val ldImageUrl = Try(findPartImageUrl(coloredPart, colorNameToId, ldrawImageFetcher)).getOrElse(None)
 
     val bricksetTimeout: Timeout = Timeout(5.seconds)
 
@@ -122,13 +122,15 @@ object PartsProcessor {
     val imageUrlFuture = ldImageUrl match {
       case Some(url) => Future.successful(Some(url))
       case None =>
-        BricksetPartFetcher.fetchPartDetails(
-          downloader,
-          coloredPart.partNumber,
-          originalElementId
-        )(bricksetTimeout, scheduler, ec).map { bricksetResult =>
-          bricksetResult.flatMap(_.imageUrl)
-        }.recover { case _ => None }
+        Try(
+          BricksetPartFetcher.fetchPartDetails(
+            downloader,
+            coloredPart.partNumber,
+            originalElementId
+          )(bricksetTimeout, scheduler, ec).map { bricksetResult =>
+            bricksetResult.flatMap(_.imageUrl)
+          }.recover { case _ => None }
+        ).getOrElse(Future.successful(None))
     }
 
     imageUrlFuture.map { imageUrl =>
@@ -151,7 +153,7 @@ object PartsProcessor {
   private def findPartImageUrl(
     coloredPart: ColoredPart,
     colorNameToId: Map[String, Int],
-    ldrawImageFetcher: LDrawImageFetcher
+    ldrawImageFetcher: LDrawImageFetcherTrait
   )(implicit ec: ExecutionContext): Option[String] = {
     // First try direct lookup by color name
     val colorIdOpt = colorNameToId.get(coloredPart.color)
@@ -178,17 +180,7 @@ object PartsProcessor {
         if (hasImage) {
           Some(s"part_images/$colorId/${coloredPart.partNumber}.png")
         } else {
-          val shortPartNumber = coloredPart.partNumber.takeWhile(_.isDigit)
-          if (shortPartNumber.nonEmpty && shortPartNumber != coloredPart.partNumber) {
-            val hasShortImage = ldrawImageFetcher.hasImageInZip(colorId, shortPartNumber)
-            if (hasShortImage) {
-              Some(s"part_images/$colorId/$shortPartNumber.png")
-            } else {
-              None
-            }
-          } else {
-            None
-          }
+          None
         }
       }
     }

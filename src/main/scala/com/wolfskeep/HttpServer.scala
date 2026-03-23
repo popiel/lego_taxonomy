@@ -304,17 +304,15 @@ object Routes {
             s"""${sourceHtml}<table>
                 <thead>
                     <tr>
-                        <th>quantity</th>
-                        <th>color</th>
-                        <th>input partNumber</th>
-                        <th>input name</th>
-                        <th>taxonomy partNumber</th>
-                        <th>taxonomy name</th>
-                        <th>image</th>
                         <th>category</th>
                         <th>category2</th>
                         <th>category3</th>
                         <th>category4</th>
+                        <th>image</th>
+                        <th>color</th>
+                        <th>quantity</th>
+                        <th>name</th>
+                        <th>partNumber</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -326,8 +324,6 @@ object Routes {
                           .toInt
 
                         results.map { mp =>
-                        val nameTaxonomy = mp.legoPart.map(_.name).getOrElse("")
-                        val partNumberTaxonomy = mp.legoPart.map(_.partNumber).getOrElse("")
                         val catNames = mp.legoPart.map(_.categories.map(_.name)).getOrElse(Nil)
                         val guessedMarker = if (mp.categoriesGuessed && catNames.nonEmpty) " (guessed)" else ""
                         val legoPart = mp.legoPart
@@ -342,17 +338,15 @@ object Routes {
                           case _ => ""
                         }
                         s"""<tr>
-                            <td>${mp.coloredPart.quantity}</td>
-                            <td>${escapeHtml(mp.coloredPart.color)}</td>
-                            <td>${escapeHtml(mp.coloredPart.partNumber)}</td>
-                            <td>${escapeHtml(mp.coloredPart.name)}</td>
-                            <td>${escapeHtml(partNumberTaxonomy)}</td>
-                            <td>${escapeHtml(nameTaxonomy)}</td>
-                            <td>${imageHtml}</td>
                             <td>${escapeHtml(catNames.headOption.getOrElse(""))}$guessedMarker</td>
                             <td>${escapeHtml(catNames.lift(1).getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(2).getOrElse(""))}</td>
                             <td>${escapeHtml(catNames.lift(3).getOrElse(""))}</td>
+                            <td>${imageHtml}</td>
+                            <td>${escapeHtml(mp.coloredPart.color)}</td>
+                            <td>${mp.coloredPart.quantity}</td>
+                            <td>${escapeHtml(mp.coloredPart.name)}</td>
+                            <td>${escapeHtml(mp.coloredPart.partNumber)}</td>
                         </tr>"""
                     }.mkString}
                 </tbody>
