@@ -9,6 +9,7 @@ import scala.util.Try
 
 object RebrickableBinaryCache {
   private val CacheDir = Paths.get(".cache", "rebrickable")
+  private[rebrickable] val LDrawCacheDir = Paths.get(".cache", "rebrickable", "ldraw")
   private[rebrickable] val FreshnessThresholdHours = 22.5
   private[rebrickable] val MaxRetries = 3
 
@@ -99,5 +100,47 @@ object RebrickableBinaryCache {
 
   def getCachePath(name: String): java.nio.file.Path = {
     CacheDir.resolve(name)
+  }
+
+  def ensureLDrawCacheDir(): Unit = {
+    if (!Files.exists(LDrawCacheDir)) {
+      Files.createDirectories(LDrawCacheDir)
+    }
+  }
+
+  def getLDrawCachePath(colorId: Int): java.nio.file.Path = {
+    LDrawCacheDir.resolve(s"parts_$colorId.zip")
+  }
+
+  def isLDrawFresh(colorId: Int): Boolean = {
+    val path = getLDrawCachePath(colorId)
+    if (!Files.exists(path)) {
+      return false
+    }
+    val lastModified = Files.getLastModifiedTime(path).toMillis
+    val ageHours = (System.currentTimeMillis() - lastModified).toDouble / (1000 * 60 * 60)
+    ageHours < FreshnessThresholdHours
+  }
+
+  def getLDrawAgeHours(colorId: Int): Double = {
+    val path = getLDrawCachePath(colorId)
+    if (!Files.exists(path)) {
+      return Double.MaxValue
+    }
+    val lastModified = Files.getLastModifiedTime(path).toMillis
+    (System.currentTimeMillis() - lastModified).toDouble / (1000 * 60 * 60)
+  }
+
+  def writeLDraw(colorId: Int, bytes: Array[Byte]): Unit = {
+    ensureLDrawCacheDir()
+    val path = getLDrawCachePath(colorId)
+    Files.write(path, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+  }
+
+  def deleteLDraw(colorId: Int): Unit = {
+    val path = getLDrawCachePath(colorId)
+    if (Files.exists(path)) {
+      Files.delete(path)
+    }
   }
 }

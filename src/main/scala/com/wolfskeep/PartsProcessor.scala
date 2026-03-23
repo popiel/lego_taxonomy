@@ -7,7 +7,9 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.util.Try
 import com.wolfskeep.rebrickable.RebrickableHolder
+import com.wolfskeep.rebrickable.LDrawImageFetcher
 
 object PartsProcessor {
   sealed trait Command
@@ -26,6 +28,7 @@ object PartsProcessor {
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
       val logger = context.log
       val rebrickableActorRef = rebrickableDataActor
+      val ldrawImageFetcher = new LDrawImageFetcher()(context.system)
       
       Behaviors.receiveMessage { message =>
         message match {
@@ -47,12 +50,12 @@ object PartsProcessor {
                   implicit val rebrickableTimeout: Timeout = Timeout(30.seconds)
                   val rebrickableDataFuture = rebrickableActorRef.ask(RebrickableHolder.GetData(_))(rebrickableTimeout, scheduler)
                   
-                  rebrickableDataFuture.onComplete {
-                    case scala.util.Success(rebrickableData) =>
-                      implicit val loggerForProcess = logger
-                      val futures: List[Future[MatchedPart]] = unmatched.map { mp =>
-                        processSinglePart(mp, taxonomyData, rebrickableData, downloader)
-                      }
+                    rebrickableDataFuture.onComplete {
+                      case scala.util.Success(rebrickableData) =>
+                        implicit val loggerForProcess = logger
+                        val futures: List[Future[MatchedPart]] = unmatched.map { mp =>
+                          processSinglePart(mp, taxonomyData, rebrickableData, downloader, ldrawImageFetcher)
+                        }
                       val sequenceFuture: Future[List[MatchedPart]] = Future.sequence(futures)
                       sequenceFuture.onComplete {
                         case scala.util.Success(processedResults: List[MatchedPart]) =>
@@ -92,28 +95,43 @@ object PartsProcessor {
     matchedPart: MatchedPart,
     taxonomyData: TaxonomyData,
     rebrickableData: com.wolfskeep.rebrickable.Data,
-    downloader: ActorRef[CachedDownloader.Command]
+    downloader: ActorRef[CachedDownloader.Command],
+    ldrawImageFetcher: LDrawImageFetcher
   )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, logger: org.slf4j.Logger): Future[MatchedPart] = {
     val coloredPart = matchedPart.coloredPart
     val originalElementId = coloredPart.elementId
     
-    val bricksetTimeout: Timeout = Timeout(5.seconds)
-    
-    BricksetPartFetcher.fetchPartDetails(
-      downloader,
-      coloredPart.partNumber,
-      originalElementId
-    )(bricksetTimeout, scheduler, ec).map { bricksetResult =>
-      val imageUrl = bricksetResult.flatMap(_.imageUrl)
-      val bricksetElementId = bricksetResult.flatMap(_.elementId)
-      val currentElementId = bricksetElementId.orElse(originalElementId)
+    val colorNameToId = rebrickableData.colors.map(c => c.name -> c.id).toMap
 
-      val elemIdStr = currentElementId.getOrElse("")
-      val designIdOpt = if (elemIdStr.nonEmpty) rebrickableData.elementIdToDesignId(elemIdStr.toLong) else None
-      
-      val taxonomyMatch = taxonomyData.findBasePart(coloredPart.partNumber)
-        .orElse(designIdOpt.flatMap(taxonomyData.findBasePart))
-      
+    // Always do taxonomy matching - independent of image fetching
+    val currentElementId = originalElementId
+    val elemIdStr = currentElementId.getOrElse("")
+    val designIdOpt: Option[String] = if (elemIdStr.nonEmpty) {
+      Try(elemIdStr.toLong).toOption.flatMap(rebrickableData.elementIdToDesignId)
+    } else None
+
+    val taxonomyMatch: Option[LegoPart] = taxonomyData.findBasePart(coloredPart.partNumber)
+      .orElse(designIdOpt.flatMap(taxonomyData.findBasePart))
+
+    // Try to find LDraw image from Rebrickable first
+    val ldImageUrl = findPartImageUrl(coloredPart, colorNameToId, ldrawImageFetcher)
+
+    val bricksetTimeout: Timeout = Timeout(5.seconds)
+
+    // Only fetch from Brickset if no LDraw image found
+    val imageUrlFuture = ldImageUrl match {
+      case Some(url) => Future.successful(Some(url))
+      case None =>
+        BricksetPartFetcher.fetchPartDetails(
+          downloader,
+          coloredPart.partNumber,
+          originalElementId
+        )(bricksetTimeout, scheduler, ec).map { bricksetResult =>
+          bricksetResult.flatMap(_.imageUrl)
+        }.recover { case _ => None }
+    }
+
+    imageUrlFuture.map { imageUrl =>
       taxonomyMatch match {
         case Some(tp) =>
           val newLegoPart = tp.copy(
@@ -124,7 +142,54 @@ object PartsProcessor {
           )
           matchedPart.copy(legoPart = Some(newLegoPart))
         case None =>
+          logger.warn(s"Failed to match element $elemIdStr, part number ${coloredPart.partNumber}, design ${designIdOpt}: ${coloredPart.name}")
           matchedPart.copy(coloredPart = coloredPart.copy(elementId = currentElementId))
+      }
+    }
+  }
+
+  private def findPartImageUrl(
+    coloredPart: ColoredPart,
+    colorNameToId: Map[String, Int],
+    ldrawImageFetcher: LDrawImageFetcher
+  )(implicit ec: ExecutionContext): Option[String] = {
+    // First try direct lookup by color name
+    val colorIdOpt = colorNameToId.get(coloredPart.color)
+
+    // If not found, try to find by matching against BrickLink color names
+    val rebrickableColorName = if (colorIdOpt.isEmpty) {
+      StudioIoReader.colorMap.values.find { name =>
+        name.equalsIgnoreCase(coloredPart.color)
+      }
+    } else {
+      None
+    }
+
+    val finalColorId = colorIdOpt.orElse {
+      rebrickableColorName.flatMap(name => colorNameToId.get(name))
+    }
+
+    finalColorId.flatMap { colorId =>
+      val downloaded = ldrawImageFetcher.ensureDownloaded(colorId)
+      if (!downloaded) {
+        None
+      } else {
+        val hasImage = ldrawImageFetcher.hasImageInZip(colorId, coloredPart.partNumber)
+        if (hasImage) {
+          Some(s"part_images/$colorId/${coloredPart.partNumber}.png")
+        } else {
+          val shortPartNumber = coloredPart.partNumber.takeWhile(_.isDigit)
+          if (shortPartNumber.nonEmpty && shortPartNumber != coloredPart.partNumber) {
+            val hasShortImage = ldrawImageFetcher.hasImageInZip(colorId, shortPartNumber)
+            if (hasShortImage) {
+              Some(s"part_images/$colorId/$shortPartNumber.png")
+            } else {
+              None
+            }
+          } else {
+            None
+          }
+        }
       }
     }
   }

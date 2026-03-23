@@ -19,7 +19,8 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import akka.stream.scaladsl.StreamConverters
 import java.io.{BufferedInputStream, InputStreamReader}
-import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableHolder}
+import java.util.zip.ZipFile
+import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableHolder, LDrawImageFetcher}
 
 object HttpServer {
   val HttpPort = 37080
@@ -56,6 +57,7 @@ object Routes {
     rebrickableDataActor: ActorRef[RebrickableHolder.Command]
   )(implicit ec: ExecutionContext, materializer: Materializer): Route = {
     implicit val scheduler: akka.actor.typed.Scheduler = actorSystem.scheduler
+    val imageFetcher = new LDrawImageFetcher()(actorSystem)
 
     concat(
       pathSingleSlash(redirect("/parts-sorter", StatusCodes.Found)),
@@ -98,6 +100,27 @@ object Routes {
                   }
                 }
             }
+          }
+        }
+      },
+      get {
+        path("part_images" / Segment / Segment) { case (colorIdStr, partNumberWithExt) =>
+          val colorId = colorIdStr.toIntOption
+          val partNumber = partNumberWithExt.stripSuffix(".png")
+          
+          colorId match {
+            case Some(cid) =>
+              val imageBytes = imageFetcher.getImageFromZip(cid, partNumber)
+              
+              imageBytes match {
+                case Some(bytes) =>
+                  val httpEntity = HttpEntity.apply(ContentType(MediaTypes.`image/png`), bytes)
+                  complete(httpEntity)
+                case None =>
+                  complete(StatusCodes.NotFound)
+              }
+            case None =>
+              complete(StatusCodes.BadRequest)
           }
         }
       }

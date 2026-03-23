@@ -16,6 +16,7 @@ object RebrickableSchedulerActor {
   case object FetchRebrickable extends Command
   private case class FetchedResult(data: Data) extends Command
   private case class FetchedFailed(reason: Throwable) extends Command
+  private case class LDrawPrefetchComplete() extends Command
 
   private val FetchHour = 3
   private val FetchMinute = 0
@@ -58,11 +59,21 @@ object RebrickableSchedulerActor {
               data.parts.size: Integer, data.colors.size: Integer, data.elements.size: Integer,
               data.sets.size: Integer, data.inventories.size: Integer, data.inventoryParts.size: Integer
             )
+            // Prefetch LDraw images for all colors
+            val colorIds = data.colors.map(_.id).toSet
+            context.log.info("RebrickableScheduler: Starting LDraw image prefetch for {} colors", colorIds.size)
+            val ldDrawFetcher = new LDrawImageFetcher()(context.system)
+            ldDrawFetcher.prefetchAll(colorIds)
+            context.log.info("RebrickableScheduler: LDraw image prefetch complete")
             scheduleNextFetch()
             Behaviors.same
 
           case FetchedFailed(reason) =>
             context.log.error("RebrickableScheduler: Fetch failed: {}", reason.getMessage)
+            scheduleNextFetch()
+            Behaviors.same
+
+          case LDrawPrefetchComplete() =>
             scheduleNextFetch()
             Behaviors.same
         }
