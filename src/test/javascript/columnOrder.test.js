@@ -399,6 +399,16 @@ describe('ColumnOrder', () => {
         const backToStart = moveToDropPosition(atEnd, 5, true, 0);
         expect(backToStart.slice(0, 4)).toEqual(['category', 'category2', 'category3', 'category4']);
       });
+
+      it('should move categories from middle of table to beginning', () => {
+        // Categories at indices 2-5, between name and color
+        const order = ['image', 'name', 'category', 'category2', 'category3', 'category4', 'color', 'quantity', 'partNumber'];
+        // Drag to position 1 (between image and name)
+        const result = moveToDropPosition(order, 3, true, 1);
+        // Categories should move to indices 1-4
+        expect(result.indexOf('category')).toBe(1);
+        expect(result.indexOf('category4')).toBe(4);
+      });
     });
 
     it('should handle dragging name column to between category columns', () => {

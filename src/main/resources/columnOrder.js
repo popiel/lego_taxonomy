@@ -226,8 +226,10 @@
       
       if (effectivePos === 0) {
         insertIndex = 0;
-      } else {
+      } else if (effectivePos > maxDragged) {
         insertIndex = effectivePos - draggedIndices.length;
+      } else {
+        insertIndex = effectivePos;
       }
     } else {
       // For non-category moves
