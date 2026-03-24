@@ -78,21 +78,26 @@ object Downloader {
         implicit val system = context.system
         val domain = getDomain(url)
         val cookies = getCookiesForDomain(state, domain)
-        
-        var request = HttpRequest(uri = url)
-        if (cookies.nonEmpty) {
-          val pairs = buildCookiePairs(cookies)
-          request = request.withHeaders(Cookie(pairs.head, pairs.tail: _*))
+
+        val baseRequest = HttpRequest(uri = url)
+        val request = cookies match {
+          case Nil => baseRequest
+          case cs =>
+            val pairs = buildCookiePairs(cs)
+            baseRequest.withHeaders(Cookie(pairs.head, pairs.tail: _*))
         }
-        since.foreach(date => request = request.withHeaders(`If-Modified-Since`(date)))
+        val requestWithModified = since match {
+          case Some(date) => request.withHeaders(`If-Modified-Since`(date))
+          case None => request
+        }
 
         if (domain.toLowerCase.contains("brickset")) {
           log.info(s"Brickset request: $url")
-          request.headers.foreach(h => log.info(s"  Request header: ${h.name} = ${h.value}"))
+          requestWithModified.headers.foreach(h => log.info(s"  Request header: ${h.name} = ${h.value}"))
         }
 
         val responseFuture = Http(context.system.classicSystem)
-          .singleRequest(request)
+          .singleRequest(requestWithModified)
           .flatMap { res =>
             if (domain.toLowerCase.contains("brickset")) {
               log.info(s"Brickset response: ${res.status}")

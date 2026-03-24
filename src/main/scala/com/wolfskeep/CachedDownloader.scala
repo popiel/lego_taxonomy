@@ -24,7 +24,7 @@ object CachedDownloader {
   // internal messages
   private final case class ReplyWith(response: Response) extends Command
 
-  private case class PendingInfo(replyTos: List[ActorRef[Response]], oldValue: String)
+  private case class PendingInfo(replyTos: List[ActorRef[Response]])
   private case class State(pending: Map[String, PendingInfo])
 
   def apply(cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.setup { context =>
@@ -76,7 +76,7 @@ object CachedDownloader {
                 case scala.util.Success(resp) => ReplyWith(resp)
                 case scala.util.Failure(ex) => ReplyWith(Failed(url, ex))
               }
-              val newInfo = PendingInfo(List(replyTo), "")
+              val newInfo = PendingInfo(List(replyTo))
               running(State(state.pending + (url -> newInfo)), downloader, cache)
           }
 

@@ -260,18 +260,6 @@
         if (!currentDropInfo || currentDropInfo.highlightType === 'box') return;
 
         const isDraggingCategory = draggedColType === 'category';
-        
-        let draggedIndices;
-        if (isDraggingCategory) {
-            draggedIndices = [];
-            for (let i = 0; i < currentOrder.length; i++) {
-                if (CATEGORY_COLUMNS.includes(currentOrder[i])) {
-                    draggedIndices.push(i);
-                }
-            }
-        } else {
-            draggedIndices = [draggedColumnIndex];
-        }
 
         const newOrder = window.columnOrder.moveToDropPosition(
             currentOrder,

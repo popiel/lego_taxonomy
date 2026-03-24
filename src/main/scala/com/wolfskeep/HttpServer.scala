@@ -128,39 +128,18 @@ object Routes {
         }
       },
       get {
-        pathPrefix("parts-sorter.css") {
-          pathEndOrSingleSlash {
-            getFromResource("parts-sorter.css")
-          } ~
-          extractRequest { req =>
-            req.uri.rawQueryString.foreach { _ =>
-            }
-            getFromResource("parts-sorter.css")
-          }
+        path("parts-sorter.css") {
+          getFromResource("parts-sorter.css")
         }
       },
       get {
-        pathPrefix("parts-sorter.js") {
-          pathEndOrSingleSlash {
-            getFromResource("parts-sorter.js")
-          } ~
-          extractRequest { req =>
-            req.uri.rawQueryString.foreach { _ =>
-            }
-            getFromResource("parts-sorter.js")
-          }
+        path("parts-sorter.js") {
+          getFromResource("parts-sorter.js")
         }
       },
       get {
-        pathPrefix("columnOrder.js") {
-          pathEndOrSingleSlash {
-            getFromResource("columnOrder.js")
-          } ~
-          extractRequest { req =>
-            req.uri.rawQueryString.foreach { _ =>
-            }
-            getFromResource("columnOrder.js")
-          }
+        path("columnOrder.js") {
+          getFromResource("columnOrder.js")
         }
       }
     )
