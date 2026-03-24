@@ -95,6 +95,8 @@
       midpoints.push((boundaryCoordinates[i] + boundaryCoordinates[i + 1]) / 2);
     }
 
+    const lastColumnRight = boundaryCoordinates[n - 1] + (boundaryCoordinates[n - 1] - boundaryCoordinates[n - 2]);
+
     let lastX2 = -Infinity;
 
     for (let i = 0; i < validPositions.length; i++) {
@@ -108,7 +110,7 @@
         if (nextDropPos === 0) {
           x2 = midpoints[0];
         } else if (nextDropPos >= n) {
-          x2 = midpoints[n - 2];
+          x2 = lastColumnRight;
         } else if (nextDropPos === dropPos + 1) {
           x2 = boundaryCoordinates[nextDropPos - 1];
         } else {
