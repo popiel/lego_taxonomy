@@ -368,6 +368,39 @@ describe('ColumnOrder', () => {
       expect(result[0]).toBe('color');
     });
 
+    describe('dragging category columns', () => {
+      it('should move all category columns together when dragging to after quantity', () => {
+        const result = moveToDropPosition(COLUMN_IDS, 1, true, 6);
+        const categoryIndices = result
+          .map((col, idx) => CATEGORY_COLUMNS.includes(col) ? idx : -1)
+          .filter(idx => idx >= 0);
+        expect(categoryIndices).toEqual([2, 3, 4, 5]);
+      });
+
+      it('should not allow repositioning within category range', () => {
+        const result = moveToDropPosition(COLUMN_IDS, 1, true, 2);
+        expect(result).toEqual(COLUMN_IDS);
+      });
+
+      it('should handle dragging category to between color and quantity', () => {
+        const result = moveToDropPosition(COLUMN_IDS, 1, true, 6);
+        expect(result.indexOf('category')).toBe(2);
+        expect(result.indexOf('quantity')).toBe(6);
+      });
+
+      it('should allow dragging categories back after moving to end', () => {
+        // First move categories to end
+        const atEnd = moveToDropPosition(COLUMN_IDS, 1, true, 9);
+        // Categories should be at positions 5-8
+        expect(atEnd.slice(5, 9)).toEqual(['category', 'category2', 'category3', 'category4']);
+        
+        // Now try to move them back to beginning
+        // When categories are at end, dragging should allow dropping at position 0
+        const backToStart = moveToDropPosition(atEnd, 5, true, 0);
+        expect(backToStart.slice(0, 4)).toEqual(['category', 'category2', 'category3', 'category4']);
+      });
+    });
+
     it('should handle dragging name column to between category columns', () => {
       const result = moveToDropPosition(COLUMN_IDS, 7, false, 1);
       // Position 1 is in category range, effectivePos = 5, insertIndex = 4

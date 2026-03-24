@@ -81,27 +81,17 @@
             const midX = rect.left + rect.width / 2;
 
             if (x < rect.right) {
+		if (th.dataset.colId === 'category' || th.dataset.colId === 'category2') {
+                    return { columnIndex: range.start, edge: 'left' };
+		}
+		if (th.dataset.colId === 'category3' || th.dataset.colId === 'category4') {
+                    return { columnIndex: range.end, edge: 'right' };
+		}
                 let targetEdge;
                 if (x < midX) {
                     targetEdge = 'left';
                 } else {
                     targetEdge = 'right';
-                }
-
-                // Apply category constraints
-                const isInFirstTwoCategories = colIndex >= range.start && colIndex <= range.start + 1;
-                const isInLastTwoCategories = colIndex >= range.end - 1 && colIndex <= range.end;
-
-                if (isDraggingCategory) {
-                    if (isInFirstTwoCategories) {
-                        targetEdge = 'left';
-                    } else if (isInLastTwoCategories) {
-                        targetEdge = 'right';
-                    }
-                } else {
-                    if (colIndex >= range.start && colIndex <= range.end) {
-                        targetEdge = range.start === 0 ? 'left' : 'right';
-                    }
                 }
 
                 return { columnIndex: colIndex, edge: targetEdge };
@@ -115,6 +105,13 @@
     function computeDropPosition(target) {
         const range = getCategoryRange();
         const isDraggingCategory = draggedColType === 'category';
+
+	let tp;
+	if (target.edge === 'left') {
+	    tp = target.columnIndex;
+	} else {
+	    tp = target.columnIndex + 1;
+	}
 
         let draggedIndices;
         if (isDraggingCategory) {
@@ -131,57 +128,10 @@
         const minDragged = Math.min(...draggedIndices);
         const maxDragged = Math.max(...draggedIndices);
 
-        let dropPosition;
-
-        if (target.edge === 'end') {
-            dropPosition = currentOrder.length;
-        } else if (target.edge === 'left') {
-            if (isDraggingCategory) {
-                // For category drag: clamp to outside category range
-                if (target.columnIndex <= range.start) {
-                    dropPosition = range.start;
-                } else {
-                    dropPosition = range.end + 1;
-                }
-            } else {
-                // For non-category: 
-                // - If at the start of category range, allow position 0
-                // - If elsewhere in category range, move to after categories
-                if (target.columnIndex === range.start) {
-                    dropPosition = 0;
-                } else if (target.columnIndex >= range.start && target.columnIndex <= range.end) {
-                    dropPosition = range.end + 1;
-                } else {
-                    dropPosition = target.columnIndex;
-                }
-            }
-        } else { // target.edge === 'right'
-            if (isDraggingCategory) {
-                if (target.columnIndex < range.start) {
-                    dropPosition = range.start;
-                } else if (target.columnIndex >= range.end) {
-                    dropPosition = range.end + 1;
-                } else {
-                    dropPosition = range.end + 1;
-                }
-            } else {
-                if (target.columnIndex >= range.start && target.columnIndex <= range.end) {
-                    dropPosition = range.end + 1;
-                } else {
-                    dropPosition = target.columnIndex + 1;
-                }
-            }
-        }
-
-        // Check if bordering on source - if so, highlight source (no move)
-        const beforeSource = dropPosition === minDragged;
-        const afterSource = dropPosition === maxDragged + 1;
-        
-        if (beforeSource || afterSource) {
+	if (tp >= minDragged && tp <= maxDragged + 1) {
             return { dropPosition: minDragged, highlightType: 'box' };
-        }
-
-        return { dropPosition: dropPosition, highlightType: 'line' };
+	}
+        return { dropPosition: tp, highlightType: 'line' };
     }
 
     function handleDragStart(e) {
@@ -281,14 +231,27 @@
         removeDropIndicator();
 
         const ths = document.querySelectorAll('th[data-col-id]');
+        const isDraggingCategory = draggedColType === 'category';
 
         if (dropInfo.highlightType === 'box') {
             const indicator = document.createElement('div');
             indicator.className = 'drop-indicator-box';
-            const th = ths[draggedColumnIndex];
-            const rect = th.getBoundingClientRect();
-            indicator.style.left = rect.left + 'px';
-            indicator.style.width = rect.width + 'px';
+            
+            if (isDraggingCategory) {
+                // Highlight all category columns
+                const range = getCategoryRange();
+                const firstTh = ths[range.start];
+                const lastTh = ths[range.end];
+                const firstRect = firstTh.getBoundingClientRect();
+                const lastRect = lastTh.getBoundingClientRect();
+                indicator.style.left = firstRect.left + 'px';
+                indicator.style.width = (lastRect.right - firstRect.left) + 'px';
+            } else {
+                const th = ths[draggedColumnIndex];
+                const rect = th.getBoundingClientRect();
+                indicator.style.left = rect.left + 'px';
+                indicator.style.width = rect.width + 'px';
+            }
             document.body.appendChild(indicator);
         } else {
             const indicator = document.createElement('div');

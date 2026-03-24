@@ -211,15 +211,24 @@
 
     if (isDraggingCategory) {
       // For category moves:
-      // - If dropping within or at the end of category range, move to end of category range
-      // - If dropping after all non-categories, move to end
+      // - If dropping at position 0, allow it
+      // - If dropping within category range (where categories currently are), clamp to after range
+      // - If dropping after category range, allow it
       let effectivePos;
-      if (dropPosition <= range.end) {
+      if (dropPosition === 0) {
+        effectivePos = 0;
+      } else if (dropPosition >= range.start && dropPosition <= range.end) {
+        // Dropping within current category range - clamp to after range
         effectivePos = range.end + 1;
       } else {
         effectivePos = dropPosition;
       }
-      insertIndex = effectivePos - draggedIndices.length;
+      
+      if (effectivePos === 0) {
+        insertIndex = 0;
+      } else {
+        insertIndex = effectivePos - draggedIndices.length;
+      }
     } else {
       // For non-category moves
       let effectiveDropPosition = dropPosition;
