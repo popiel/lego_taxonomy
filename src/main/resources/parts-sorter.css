@@ -71,6 +71,27 @@
         .drop-indicator.after {
             right: -3px;
         }
+        .drop-indicator-box {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            background: rgba(255, 193, 7, 0.15);
+            border: 3px dashed #FFC107;
+            pointer-events: none;
+            z-index: 9999;
+            box-shadow: 0 0 15px rgba(255, 193, 7, 0.5);
+        }
+        .drop-indicator-line {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background-color: #00E676;
+            pointer-events: none;
+            z-index: 9999;
+            box-shadow: 0 0 8px #00E676;
+            margin-left: -2px;
+        }
         .source-info {
             display: flex;
             align-items: center;

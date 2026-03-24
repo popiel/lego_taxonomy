@@ -24,66 +24,259 @@
     return { start: indices[0], end: indices[indices.length - 1] };
   }
 
-  function constrainDropTarget(order, targetIndex, isDraggingCategory) {
+  function getValidDropPositions(order, draggedColumnIndex, isDraggingCategory) {
+    const n = order.length;
     const range = getCategoryRange(order);
-    if (range.start === -1) return targetIndex;
+    const validPositions = [];
+
+    let draggedIndices;
     if (isDraggingCategory) {
-      return targetIndex;
+      draggedIndices = [];
+      for (let i = 0; i < n; i++) {
+        if (CATEGORY_COLUMNS.includes(order[i])) {
+          draggedIndices.push(i);
+        }
+      }
+    } else {
+      draggedIndices = [draggedColumnIndex];
     }
-    if (targetIndex >= range.start && targetIndex <= range.end) {
-      return range.end + 1;
+
+    const minDragged = Math.min(...draggedIndices);
+    const maxDragged = Math.max(...draggedIndices);
+
+    // Position 0: invalid if dragging first column or first category (when isDraggingCategory)
+    const canDropAtStart = isDraggingCategory ? range.start > 0 : minDragged > 0;
+    if (canDropAtStart) {
+      validPositions.push(0);
     }
-    return targetIndex;
+
+    // Positions between columns (1 to n-1)
+    for (let pos = 1; pos < n; pos++) {
+      const beforeIsDragged = draggedIndices.includes(pos - 1);
+      const afterIsDragged = draggedIndices.includes(pos);
+      
+      // Position equals dragged column index means we're at the current position (before the dragged column)
+      // This is always valid - it allows dropping back at the original spot
+      const atCurrentPosition = draggedIndices.includes(pos) && !beforeIsDragged;
+      
+      // For non-category drags, exclude positions within category range
+      // For category drags, exclude positions within the category range
+      let withinCategoryRange = false;
+      if (range.start !== -1) {
+        withinCategoryRange = pos > range.start && pos <= range.end;
+      }
+      
+      // Valid if:
+      // - At the current position (before the dragged column), OR
+      // - Neither boundary column is being dragged (not adjacent)
+      const notAdjacentToDragged = !beforeIsDragged && !afterIsDragged;
+      const isValid = atCurrentPosition || notAdjacentToDragged;
+      
+      if (isValid && !withinCategoryRange) {
+        validPositions.push(pos);
+      }
+    }
+
+    // Position n: invalid if dragging last column or last category (when isDraggingCategory)
+    const canDropAtEnd = isDraggingCategory ? range.end < n - 1 : maxDragged < n - 1;
+    if (canDropAtEnd) {
+      validPositions.push(n);
+    }
+
+    return validPositions;
   }
 
-  function moveColumn(order, fromIndex, toIndex) {
-    const range = getCategoryRange(order);
-    const movedColumn = order[fromIndex];
-    const isMovingCategoryColumn = isCategoryColumn(movedColumn);
-    let adjustedToIndex = toIndex;
-    if (!isMovingCategoryColumn && toIndex > range.start && toIndex <= range.end) {
-      adjustedToIndex = range.end + 1;
+  function computeDropPositionRanges(boundaryCoordinates, validPositions) {
+    const ranges = [];
+    const n = boundaryCoordinates.length;
+
+    const midpoints = [];
+    for (let i = 0; i < n - 1; i++) {
+      midpoints.push((boundaryCoordinates[i] + boundaryCoordinates[i + 1]) / 2);
     }
-    const isWithinRange = fromIndex >= range.start && fromIndex <= range.end && 
-                          adjustedToIndex >= range.start && adjustedToIndex <= range.end;
-    const newOrder = [...order];
-    const [moved] = newOrder.splice(fromIndex, 1);
-    if (adjustedToIndex > fromIndex && !isWithinRange) {
-      adjustedToIndex = adjustedToIndex - 1;
+
+    let lastX2 = -Infinity;
+
+    for (let i = 0; i < validPositions.length; i++) {
+      const dropPos = validPositions[i];
+      let x2;
+
+      if (i === validPositions.length - 1) {
+        x2 = Infinity;
+      } else {
+        const nextDropPos = validPositions[i + 1];
+        if (nextDropPos === 0) {
+          x2 = midpoints[0];
+        } else if (nextDropPos >= n) {
+          x2 = midpoints[n - 2];
+        } else if (nextDropPos === dropPos + 1) {
+          x2 = boundaryCoordinates[nextDropPos - 1];
+        } else {
+          x2 = midpoints[nextDropPos - 1];
+        }
+      }
+
+      ranges.push({
+        x1: lastX2,
+        x2: x2,
+        dropPosition: dropPos
+      });
+
+      lastX2 = x2;
     }
-    newOrder.splice(adjustedToIndex, 0, moved);
-    return newOrder;
+
+    return ranges;
   }
 
-  function moveCategoryGroup(order, fromIndex, toIndex) {
-    const newOrder = [...order];
-    const categoryColumnsInOrder = newOrder.filter(col => CATEGORY_COLUMNS.includes(col));
-    if (categoryColumnsInOrder.length === 0) return newOrder;
-    
-    const range = getCategoryRange(order);
-    const isDraggingFromCategoryRange = fromIndex <= range.end;
-    
-    if (!isDraggingFromCategoryRange) {
-      return moveColumn(order, fromIndex, toIndex);
+  function getDropPositionFromX(ranges, x) {
+    for (const range of ranges) {
+      if (x >= range.x1 && x < range.x2) {
+        return range.dropPosition;
+      }
     }
-    
-    const targetIsInCategoryRange = toIndex <= range.end;
-    if (targetIsInCategoryRange) {
+    return ranges[ranges.length - 1].dropPosition;
+  }
+
+  function getDropPositionDisplayInfo(order, boundaryCoordinates, draggedColumnIndex, isDraggingCategory, dropPosition) {
+    const n = order.length;
+    const range = getCategoryRange(order);
+
+    let draggedIndices;
+    if (isDraggingCategory) {
+      draggedIndices = [];
+      for (let i = 0; i < n; i++) {
+        if (CATEGORY_COLUMNS.includes(order[i])) {
+          draggedIndices.push(i);
+        }
+      }
+    } else {
+      draggedIndices = [draggedColumnIndex];
+    }
+
+    const minDragged = Math.min(...draggedIndices);
+    const maxDragged = Math.max(...draggedIndices);
+
+    // Show box if at current position (before or after the block)
+    const atBeforePosition = dropPosition === minDragged;
+    const atAfterPosition = dropPosition === maxDragged + 1;
+
+    if (atBeforePosition || atAfterPosition) {
+      return { type: 'box', startBoundary: boundaryCoordinates[minDragged], endBoundary: boundaryCoordinates[maxDragged] };
+    }
+
+    // Show line at boundary
+    let boundaryIndex;
+    let isEndOfTable = false;
+    if (dropPosition === 0) {
+      boundaryIndex = 0;
+    } else if (dropPosition === n) {
+      boundaryIndex = n - 1;
+      isEndOfTable = true;
+    } else {
+      boundaryIndex = dropPosition;
+    }
+
+    return { type: 'line', boundaryIndex: boundaryIndex, isEndOfTable: isEndOfTable };
+  }
+
+  function getInsertIndex(order, draggedColumnIndex, isDraggingCategory, dropPosition) {
+    const n = order.length;
+    const range = getCategoryRange(order);
+
+    let draggedIndices;
+    if (isDraggingCategory) {
+      draggedIndices = [];
+      for (let i = 0; i < n; i++) {
+        if (CATEGORY_COLUMNS.includes(order[i])) {
+          draggedIndices.push(i);
+        }
+      }
+    } else {
+      draggedIndices = [draggedColumnIndex];
+    }
+
+    if (draggedIndices.length === 0) return -1;
+
+    const minDragged = Math.min(...draggedIndices);
+    const maxDragged = Math.max(...draggedIndices);
+
+    // Check if this is a no-op (dropping at current position)
+    if (dropPosition === minDragged || dropPosition === maxDragged + 1) {
+      return -1;
+    }
+
+    let insertIndex;
+
+    if (isDraggingCategory) {
+      // For category moves:
+      // - If dropping within or at the end of category range, move to end of category range
+      // - If dropping after all non-categories, move to end
+      let effectivePos;
+      if (dropPosition <= range.end) {
+        effectivePos = range.end + 1;
+      } else {
+        effectivePos = dropPosition;
+      }
+      insertIndex = effectivePos - draggedIndices.length;
+    } else {
+      // For non-category moves
+      let effectiveDropPosition = dropPosition;
+      
+      // If dropping within category range, move to end of category range
+      if (dropPosition > range.start && dropPosition <= range.end) {
+        effectiveDropPosition = range.end + 1;
+      }
+      
+      if (effectiveDropPosition > maxDragged) {
+        insertIndex = effectiveDropPosition - draggedIndices.length;
+      } else {
+        insertIndex = effectiveDropPosition;
+      }
+    }
+
+    return insertIndex;
+  }
+
+  function moveToDropPosition(order, draggedColumnIndex, isDraggingCategory, dropPosition) {
+    const n = order.length;
+    const range = getCategoryRange(order);
+
+    let draggedIndices;
+    if (isDraggingCategory) {
+      draggedIndices = [];
+      for (let i = 0; i < n; i++) {
+        if (CATEGORY_COLUMNS.includes(order[i])) {
+          draggedIndices.push(i);
+        }
+      }
+    } else {
+      draggedIndices = [draggedColumnIndex];
+    }
+
+    if (draggedIndices.length === 0) return [...order];
+
+    const insertIndex = getInsertIndex(order, draggedColumnIndex, isDraggingCategory, dropPosition);
+
+    if (insertIndex === -1) {
       return [...order];
     }
-    
-    const categoryCount = categoryColumnsInOrder.length;
-    let adjustedToIndex = toIndex;
-    
-    if (toIndex > fromIndex) {
-      adjustedToIndex = toIndex - categoryCount;
-    } else {
-      adjustedToIndex = Math.max(toIndex - categoryCount + 1, range.end + 1);
+
+    // Sort indices in descending order for removal
+    const sortedIndices = [...draggedIndices].sort((a, b) => b - a);
+
+    let newOrder = [...order];
+    for (const idx of sortedIndices) {
+      newOrder.splice(idx, 1);
     }
-    
-    const removedCategories = newOrder.splice(range.start, categoryCount);
-    newOrder.splice(adjustedToIndex, 0, ...removedCategories);
-    
+
+    // Insert at new position
+    if (isDraggingCategory) {
+      const columnsToInsert = draggedIndices.map(idx => order[idx]);
+      newOrder.splice(insertIndex, 0, ...columnsToInsert);
+    } else {
+      newOrder.splice(insertIndex, 0, order[draggedColumnIndex]);
+    }
+
     return newOrder;
   }
 
@@ -97,9 +290,12 @@
     getColumnIndex,
     isCategoryColumn,
     getCategoryRange,
-    constrainDropTarget,
-    moveColumn,
-    moveCategoryGroup,
+    getValidDropPositions,
+    computeDropPositionRanges,
+    getDropPositionFromX,
+    getDropPositionDisplayInfo,
+    getInsertIndex,
+    moveToDropPosition,
     resetColumns
   };
 }));

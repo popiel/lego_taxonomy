@@ -26,6 +26,9 @@ object HttpServer {
   val HttpPort = 37080
   val HttpsPort = 37443
   val DefaultMaxImageWidth = 100
+  val StartTime = System.currentTimeMillis()
+
+  def cacheBustJsPath(filename: String): String = s"/$filename?t=$StartTime"
 
   def start(
     partsProcessor: ActorRef[PartsProcessor.Command],
@@ -125,18 +128,39 @@ object Routes {
         }
       },
       get {
-        path("parts-sorter.css") {
-          getFromResource("parts-sorter.css")
+        pathPrefix("parts-sorter.css") {
+          pathEndOrSingleSlash {
+            getFromResource("parts-sorter.css")
+          } ~
+          extractRequest { req =>
+            req.uri.rawQueryString.foreach { _ =>
+            }
+            getFromResource("parts-sorter.css")
+          }
         }
       },
       get {
-        path("parts-sorter.js") {
-          getFromResource("parts-sorter.js")
+        pathPrefix("parts-sorter.js") {
+          pathEndOrSingleSlash {
+            getFromResource("parts-sorter.js")
+          } ~
+          extractRequest { req =>
+            req.uri.rawQueryString.foreach { _ =>
+            }
+            getFromResource("parts-sorter.js")
+          }
         }
       },
       get {
-        path("columnOrder.js") {
-          getFromResource("columnOrder.js")
+        pathPrefix("columnOrder.js") {
+          pathEndOrSingleSlash {
+            getFromResource("columnOrder.js")
+          } ~
+          extractRequest { req =>
+            req.uri.rawQueryString.foreach { _ =>
+            }
+            getFromResource("columnOrder.js")
+          }
         }
       }
     )
@@ -225,7 +249,7 @@ object Routes {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LEGO Parts Sorter</title>
-    <link rel="stylesheet" href="/parts-sorter.css">
+    <link rel="stylesheet" href=${HttpServer.cacheBustJsPath("parts-sorter.css")}>
 </head>
 <body>
     <div class="description">
@@ -308,8 +332,8 @@ object Routes {
         }}
     </div>
 
-    <script src="/columnOrder.js"></script>
-    <script src="/parts-sorter.js"></script>
+    <script src=${HttpServer.cacheBustJsPath("columnOrder.js")}></script>
+    <script src=${HttpServer.cacheBustJsPath("parts-sorter.js")}></script>
 </body>
 </html>"""
   }

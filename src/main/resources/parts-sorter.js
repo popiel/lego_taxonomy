@@ -5,6 +5,11 @@
     let draggedColId = null;
     let draggedColType = null;
     let draggedElement = null;
+    let draggedColumnIndex = null;
+
+    let dropPositionRanges = null;
+    let boundaryCoordinates = null;
+    let currentDropPosition = null;
 
     document.addEventListener('DOMContentLoaded', init);
 
@@ -45,12 +50,25 @@
         });
     }
 
+    function computeBoundaryCoordinates() {
+        const ths = document.querySelectorAll('th[data-col-id]');
+        const coords = [];
+        ths.forEach(th => {
+            const rect = th.getBoundingClientRect();
+            coords.push(rect.left);
+        });
+        return coords;
+    }
+
     function handleDragStart(e) {
         draggedColId = e.target.dataset.colId;
         draggedColType = e.target.dataset.colType;
         draggedElement = e.target;
+        draggedColumnIndex = currentOrder.indexOf(draggedColId);
         e.target.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
+
+        initializeDragState();
     }
 
     function handleTouchStart(e) {
@@ -59,112 +77,160 @@
         if (draggedElement) {
             draggedColId = draggedElement.dataset.colId;
             draggedColType = draggedElement.dataset.colType;
+            draggedColumnIndex = currentOrder.indexOf(draggedColId);
             draggedElement.classList.add('dragging');
+
+            initializeDragState();
         }
+    }
+
+    function initializeDragState() {
+        boundaryCoordinates = computeBoundaryCoordinates();
+        const isDraggingCategory = draggedColType === 'category';
+        const validPositions = window.columnOrder.getValidDropPositions(
+            currentOrder,
+            draggedColumnIndex,
+            isDraggingCategory
+        );
+        dropPositionRanges = window.columnOrder.computeDropPositionRanges(
+            boundaryCoordinates,
+            validPositions
+        );
+        currentDropPosition = draggedColumnIndex;
     }
 
     function handleDragEnd(e) {
         e.target.classList.remove('dragging');
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
         removeDropIndicator();
-        draggedColId = null;
-        draggedColType = null;
-        draggedElement = null;
+
+        if (currentDropPosition !== null) {
+            applyDrop();
+        }
+
+        cleanupDragState();
     }
 
     function handleDragOver(e) {
         e.preventDefault();
-        const th = e.target.closest('th[data-col-id]');
-        if (!th || !canDropInPosition(th)) {
-            removeDropIndicator();
-            return;
-        }
         e.dataTransfer.dropEffect = 'move';
-        showDropIndicator(th, e.clientX);
+
+        const x = e.clientX;
+        const newDropPosition = window.columnOrder.getDropPositionFromX(dropPositionRanges, x);
+
+        if (newDropPosition !== currentDropPosition) {
+            currentDropPosition = newDropPosition;
+            showDropIndicator(x);
+        }
     }
 
     function handleDragLeave(e) {
         const th = e.target.closest('th[data-col-id]');
         if (th) th.classList.remove('drag-over');
-        removeDropIndicator();
     }
 
     function handleDrop(e) {
         e.preventDefault();
-        const th = e.target.closest('th[data-col-id]');
-        if (th) handleDropTarget(th);
+        if (currentDropPosition !== null) {
+            applyDrop();
+        }
+        cleanupDragState();
     }
 
     function handleTouchMove(e) {
         if (!draggedElement) return;
         e.preventDefault();
         const touch = e.touches[0];
-        const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-        const th = elementBelow?.closest('th[data-col-id]');
-        if (th && canDropInPosition(th)) {
-            th.classList.add('drag-over');
-            showDropIndicator(th, touch.clientX);
-        } else {
-            removeDropIndicator();
+
+        const x = touch.clientX;
+        const newDropPosition = window.columnOrder.getDropPositionFromX(dropPositionRanges, x);
+
+        if (newDropPosition !== currentDropPosition) {
+            currentDropPosition = newDropPosition;
+            showDropIndicator(x);
         }
     }
 
     function handleTouchEnd(e) {
         if (!draggedElement) return;
         e.preventDefault();
-        const elementBelow = document.elementFromPoint(
-            e.changedTouches[0].clientX,
-            e.changedTouches[0].clientY
-        );
-        const th = elementBelow?.closest('th[data-col-id]');
-        if (th) handleDropTarget(th);
+
+        if (currentDropPosition !== null) {
+            applyDrop();
+        }
+
         draggedElement.classList.remove('dragging');
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
         removeDropIndicator();
-        draggedColId = null;
-        draggedColType = null;
-        draggedElement = null;
+
+        cleanupDragState();
     }
 
-    function showDropIndicator(th, clientX) {
+    function showDropIndicator(x) {
         removeDropIndicator();
-        const rect = th.getBoundingClientRect();
-        const isAfter = clientX > rect.left + rect.width / 2;
-        const indicator = document.createElement('div');
-        indicator.className = 'drop-indicator ' + (isAfter ? 'after' : 'before');
-        th.style.position = 'relative';
-        th.appendChild(indicator);
+
+        const isDraggingCategory = draggedColType === 'category';
+        const displayInfo = window.columnOrder.getDropPositionDisplayInfo(
+            currentOrder,
+            boundaryCoordinates,
+            draggedColumnIndex,
+            isDraggingCategory,
+            currentDropPosition
+        );
+
+        if (displayInfo.type === 'box') {
+            const indicator = document.createElement('div');
+            indicator.className = 'drop-indicator-box';
+            indicator.style.left = displayInfo.startBoundary + 'px';
+            indicator.style.width = (displayInfo.endBoundary - displayInfo.startBoundary) + 'px';
+            document.body.appendChild(indicator);
+        } else {
+            const indicator = document.createElement('div');
+            indicator.className = 'drop-indicator-line';
+            let leftPos;
+            if (displayInfo.isEndOfTable) {
+                const n = boundaryCoordinates.length;
+                leftPos = boundaryCoordinates[n - 1] - 4;
+            } else if (displayInfo.boundaryIndex === 0) {
+                leftPos = boundaryCoordinates[0];
+            } else {
+                leftPos = boundaryCoordinates[displayInfo.boundaryIndex];
+            }
+            indicator.style.left = leftPos + 'px';
+            document.body.appendChild(indicator);
+        }
     }
 
     function removeDropIndicator() {
-        document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+        document.querySelectorAll('.drop-indicator-box, .drop-indicator-line').forEach(el => el.remove());
     }
 
-    function canDropInPosition(th) {
-        const targetIndex = currentOrder.indexOf(th.dataset.colId);
-        const constrainedIndex = window.columnOrder.constrainDropTarget(
+    function applyDrop() {
+        if (currentDropPosition === null) return;
+
+        const isDraggingCategory = draggedColType === 'category';
+        const newOrder = window.columnOrder.moveToDropPosition(
             currentOrder,
-            targetIndex,
-            draggedColType === 'category'
+            draggedColumnIndex,
+            isDraggingCategory,
+            currentDropPosition
         );
-        return constrainedIndex === targetIndex;
-    }
 
-    function handleDropTarget(th) {
-        th.classList.remove('drag-over');
-        const targetColId = th.dataset.colId;
-        const fromIndex = currentOrder.indexOf(draggedColId);
-        let toIndex = currentOrder.indexOf(targetColId);
-        toIndex = window.columnOrder.constrainDropTarget(currentOrder, toIndex, draggedColType === 'category');
-        if (fromIndex !== toIndex) {
-            if (draggedColType === 'category') {
-                currentOrder = window.columnOrder.moveCategoryGroup(currentOrder, fromIndex, toIndex);
-            } else {
-                currentOrder = window.columnOrder.moveColumn(currentOrder, fromIndex, toIndex);
-            }
+        if (newOrder.join(',') !== currentOrder.join(',')) {
+            currentOrder = newOrder;
             reorderTable();
         }
+    }
+
+    function cleanupDragState() {
+        dropPositionRanges = null;
+        boundaryCoordinates = null;
+        currentDropPosition = null;
+        draggedColId = null;
+        draggedColType = null;
+        draggedElement = null;
+        draggedColumnIndex = null;
     }
 
     function reorderTable() {

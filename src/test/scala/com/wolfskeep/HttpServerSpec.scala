@@ -162,8 +162,8 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
         responseBody should include("CATEGORY_COLUMNS")
-        responseBody should include("moveCategoryGroup")
-        responseBody should include("constrainDropTarget")
+        responseBody should include("getValidDropPositions")
+        responseBody should include("moveToDropPosition")
       }
     }
 
