@@ -157,11 +157,20 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
 
+    "serve columnOrder.js file" in {
+      Get("/columnOrder.js") ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
+        responseBody should include("CATEGORY_COLUMNS")
+        responseBody should include("moveCategoryGroup")
+        responseBody should include("constrainDropTarget")
+      }
+    }
+
     "serve parts-sorter.js file" in {
       Get("/parts-sorter.js") ~> route ~> check {
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
-        responseBody should include("CATEGORY_COLUMNS")
         responseBody should include("handleDragStart")
         responseBody should include("showDropIndicator")
         responseBody should include("resetColumnOrder")

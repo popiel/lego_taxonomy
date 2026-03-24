@@ -1,8 +1,6 @@
 const {
   COLUMN_IDS,
   CATEGORY_COLUMNS,
-  CATEGORY_START,
-  CATEGORY_END,
   getColumnIndex,
   isCategoryColumn,
   constrainDropTarget,
@@ -69,28 +67,28 @@ describe('ColumnOrder', () => {
 
   describe('constrainDropTarget', () => {
     it('should allow category columns to drop anywhere', () => {
-      expect(constrainDropTarget(0, true)).toBe(0);
-      expect(constrainDropTarget(1, true)).toBe(1);
-      expect(constrainDropTarget(2, true)).toBe(2);
-      expect(constrainDropTarget(3, true)).toBe(3);
-      expect(constrainDropTarget(4, true)).toBe(4);
-      expect(constrainDropTarget(5, true)).toBe(5);
-      expect(constrainDropTarget(8, true)).toBe(8);
+      expect(constrainDropTarget(COLUMN_IDS, 0, true)).toBe(0);
+      expect(constrainDropTarget(COLUMN_IDS, 1, true)).toBe(1);
+      expect(constrainDropTarget(COLUMN_IDS, 2, true)).toBe(2);
+      expect(constrainDropTarget(COLUMN_IDS, 3, true)).toBe(3);
+      expect(constrainDropTarget(COLUMN_IDS, 4, true)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 5, true)).toBe(5);
+      expect(constrainDropTarget(COLUMN_IDS, 8, true)).toBe(8);
     });
 
     it('should redirect non-category columns dropped within category range to after category columns', () => {
-      expect(constrainDropTarget(0, false)).toBe(4);
-      expect(constrainDropTarget(1, false)).toBe(4);
-      expect(constrainDropTarget(2, false)).toBe(4);
-      expect(constrainDropTarget(3, false)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 0, false)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 1, false)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 2, false)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 3, false)).toBe(4);
     });
 
     it('should allow non-category columns to drop outside category range', () => {
-      expect(constrainDropTarget(4, false)).toBe(4);
-      expect(constrainDropTarget(5, false)).toBe(5);
-      expect(constrainDropTarget(6, false)).toBe(6);
-      expect(constrainDropTarget(7, false)).toBe(7);
-      expect(constrainDropTarget(8, false)).toBe(8);
+      expect(constrainDropTarget(COLUMN_IDS, 4, false)).toBe(4);
+      expect(constrainDropTarget(COLUMN_IDS, 5, false)).toBe(5);
+      expect(constrainDropTarget(COLUMN_IDS, 6, false)).toBe(6);
+      expect(constrainDropTarget(COLUMN_IDS, 7, false)).toBe(7);
+      expect(constrainDropTarget(COLUMN_IDS, 8, false)).toBe(8);
     });
   });
 
@@ -153,6 +151,30 @@ describe('ColumnOrder', () => {
       const result = moveColumn(order, 0, 8);
       const resultCategoryIndices = result.slice(0, 4).filter(col => CATEGORY_COLUMNS.includes(col));
       expect(resultCategoryIndices.length).toBe(4);
+    });
+
+    describe('after category repositioning', () => {
+      it('should not allow non-category column to insert between category columns', () => {
+        const orderAfterCategoryMove = ['image', 'color', 'category', 'category2', 'category3', 'category4', 'quantity', 'name', 'partNumber'];
+        const colorIndex = getColumnIndex(orderAfterCategoryMove, 'color');
+        expect(colorIndex).toBe(1);
+        const category3Index = getColumnIndex(orderAfterCategoryMove, 'category3');
+        expect(category3Index).toBe(4);
+        const category4Index = getColumnIndex(orderAfterCategoryMove, 'category4');
+        expect(category4Index).toBe(5);
+        const targetBetweenCategory3And4 = 4;
+        const result = constrainDropTarget(orderAfterCategoryMove, targetBetweenCategory3And4, false);
+        expect(result).toBeGreaterThan(category4Index);
+      });
+
+      it('should keep categories contiguous after repositioning', () => {
+        const orderAfterCategoryMove = ['image', 'color', 'category', 'category2', 'category3', 'category4', 'quantity', 'name', 'partNumber'];
+        const categoryIndices = orderAfterCategoryMove
+          .map((col, idx) => CATEGORY_COLUMNS.includes(col) ? idx : -1)
+          .filter(idx => idx >= 0);
+        expect(categoryIndices).toEqual([2, 3, 4, 5]);
+        expect(categoryIndices[categoryIndices.length - 1] - categoryIndices[0]).toBe(categoryIndices.length - 1);
+      });
     });
 
     describe('moveCategoryGroup', () => {

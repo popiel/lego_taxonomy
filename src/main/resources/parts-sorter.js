@@ -1,7 +1,5 @@
 (function() {
-    const CATEGORY_COLUMNS = ['category', 'category2', 'category3', 'category4'];
-    const CATEGORY_START = 0;
-    const CATEGORY_END = 3;
+    const CATEGORY_COLUMNS = window.columnOrder.CATEGORY_COLUMNS;
 
     let currentOrder = [...CATEGORY_COLUMNS, 'image', 'color', 'quantity', 'name', 'partNumber'];
     let draggedColId = null;
@@ -143,63 +141,30 @@
         document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
     }
 
+    function canDropInPosition(th) {
+        const targetIndex = currentOrder.indexOf(th.dataset.colId);
+        const constrainedIndex = window.columnOrder.constrainDropTarget(
+            currentOrder,
+            targetIndex,
+            draggedColType !== 'category'
+        );
+        return constrainedIndex === targetIndex;
+    }
+
     function handleDropTarget(th) {
         th.classList.remove('drag-over');
         const targetColId = th.dataset.colId;
         const fromIndex = currentOrder.indexOf(draggedColId);
         let toIndex = currentOrder.indexOf(targetColId);
-        toIndex = constrainTarget(toIndex, draggedColType !== 'category');
+        toIndex = window.columnOrder.constrainDropTarget(currentOrder, toIndex, draggedColType !== 'category');
         if (fromIndex !== toIndex) {
-            moveColumnInOrder(fromIndex, toIndex);
+            if (draggedColType === 'category') {
+                currentOrder = window.columnOrder.moveCategoryGroup(currentOrder, fromIndex, toIndex);
+            } else {
+                currentOrder = window.columnOrder.moveColumn(currentOrder, fromIndex, toIndex);
+            }
             reorderTable();
         }
-    }
-
-    function canDropInPosition(th) {
-        const targetIndex = currentOrder.indexOf(th.dataset.colId);
-        if (draggedColType === 'category') {
-            return targetIndex > CATEGORY_END;
-        }
-        return targetIndex < CATEGORY_START || targetIndex > CATEGORY_END;
-    }
-
-    function constrainTarget(targetIndex, isNonCategory) {
-        if (isNonCategory) {
-            if (targetIndex >= CATEGORY_START && targetIndex <= CATEGORY_END) {
-                return CATEGORY_END + 1;
-            }
-        }
-        return targetIndex;
-    }
-
-    function moveColumnInOrder(fromIndex, toIndex) {
-        if (draggedColType === 'category') {
-            moveCategoryGroupInOrder(fromIndex, toIndex);
-        } else {
-            const [moved] = currentOrder.splice(fromIndex, 1);
-            const insertIndex = toIndex > fromIndex && toIndex > CATEGORY_END + 1 ? toIndex - 1 : toIndex;
-            currentOrder.splice(insertIndex, 0, moved);
-        }
-    }
-
-    function moveCategoryGroupInOrder(fromIndex, toIndex) {
-        const firstCategoryIndex = currentOrder.findIndex(col => CATEGORY_COLUMNS.includes(col));
-        const categoryCount = CATEGORY_COLUMNS.length;
-        
-        const targetIsInCategoryRange = toIndex <= CATEGORY_END;
-        if (targetIsInCategoryRange) {
-            return;
-        }
-        
-        let adjustedToIndex = toIndex;
-        if (toIndex > fromIndex) {
-            adjustedToIndex = toIndex - categoryCount;
-        } else {
-            adjustedToIndex = Math.max(toIndex - categoryCount + 1, CATEGORY_END + 1);
-        }
-        
-        const removedCategories = currentOrder.splice(firstCategoryIndex, categoryCount);
-        currentOrder.splice(adjustedToIndex, 0, ...removedCategories);
     }
 
     function reorderTable() {
@@ -223,7 +188,7 @@
     }
 
     function resetColumnOrder() {
-        currentOrder = [...CATEGORY_COLUMNS, 'image', 'color', 'quantity', 'name', 'partNumber'];
+        currentOrder = window.columnOrder.resetColumns();
         reorderTable();
     }
 

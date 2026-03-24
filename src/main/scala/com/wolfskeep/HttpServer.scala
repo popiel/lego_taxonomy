@@ -133,6 +133,11 @@ object Routes {
         path("parts-sorter.js") {
           getFromResource("parts-sorter.js")
         }
+      },
+      get {
+        path("columnOrder.js") {
+          getFromResource("columnOrder.js")
+        }
       }
     )
   }
@@ -303,6 +308,7 @@ object Routes {
         }}
     </div>
 
+    <script src="/columnOrder.js"></script>
     <script src="/parts-sorter.js"></script>
 </body>
 </html>"""
