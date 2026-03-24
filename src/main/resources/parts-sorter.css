@@ -55,22 +55,6 @@
             outline: 2px solid #0288D1;
             outline-offset: -2px;
         }
-        .drop-indicator {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 6px;
-            background-color: #00E676;
-            pointer-events: none;
-            z-index: 10;
-            box-shadow: 0 0 8px #00E676;
-        }
-        .drop-indicator.before {
-            left: -3px;
-        }
-        .drop-indicator.after {
-            right: -3px;
-        }
         .drop-indicator-box {
             position: fixed;
             top: 0;

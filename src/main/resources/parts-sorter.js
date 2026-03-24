@@ -1,5 +1,5 @@
 (function() {
-    const CATEGORY_COLUMNS = window.columnOrder.CATEGORY_COLUMNS;
+    const { CATEGORY_COLUMNS, getCategoryRange, moveToDropPosition, resetColumns } = window.columnOrder;
 
     let currentOrder = [...CATEGORY_COLUMNS, 'image', 'color', 'quantity', 'name', 'partNumber'];
     let draggedColId = null;
@@ -46,17 +46,9 @@
         });
     }
 
-    function getCategoryRange() {
-        const indices = currentOrder
-            .map((col, idx) => CATEGORY_COLUMNS.includes(col) ? idx : -1)
-            .filter(idx => idx >= 0);
-        if (indices.length === 0) return { start: -1, end: -1 };
-        return { start: indices[0], end: indices[indices.length - 1] };
-    }
 
-    function computeDropTarget(x) {
         const ths = document.querySelectorAll('th[data-col-id]');
-        const range = getCategoryRange();
+        const range = getCategoryRange(currentOrder);
         const isDraggingCategory = draggedColType === 'category';
 
         let draggedIndices;
@@ -103,7 +95,7 @@
     }
 
     function computeDropPosition(target) {
-        const range = getCategoryRange();
+        const range = getCategoryRange(currentOrder);
         const isDraggingCategory = draggedColType === 'category';
 
 	let tp;
@@ -239,7 +231,7 @@
             
             if (isDraggingCategory) {
                 // Highlight all category columns
-                const range = getCategoryRange();
+                const range = getCategoryRange(currentOrder);
                 const firstTh = ths[range.start];
                 const lastTh = ths[range.end];
                 const firstRect = firstTh.getBoundingClientRect();

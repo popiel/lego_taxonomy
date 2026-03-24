@@ -300,14 +300,7 @@
   return {
     COLUMN_IDS,
     CATEGORY_COLUMNS,
-    getColumnIndex,
-    isCategoryColumn,
     getCategoryRange,
-    getValidDropPositions,
-    computeDropPositionRanges,
-    getDropPositionFromX,
-    getDropPositionDisplayInfo,
-    getInsertIndex,
     moveToDropPosition,
     resetColumns
   };
