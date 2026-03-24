@@ -38,12 +38,18 @@
 
   function moveColumn(order, fromIndex, toIndex) {
     const range = getCategoryRange(order);
+    const movedColumn = order[fromIndex];
+    const isMovingCategoryColumn = isCategoryColumn(movedColumn);
+    let adjustedToIndex = toIndex;
+    if (!isMovingCategoryColumn && toIndex > range.start && toIndex <= range.end) {
+      adjustedToIndex = range.end + 1;
+    }
+    const isWithinRange = fromIndex >= range.start && fromIndex <= range.end && 
+                          adjustedToIndex >= range.start && adjustedToIndex <= range.end;
     const newOrder = [...order];
     const [moved] = newOrder.splice(fromIndex, 1);
-    const minNonCategoryIndex = range.end + 1;
-    let adjustedToIndex = toIndex;
-    if (toIndex > fromIndex) {
-      adjustedToIndex = toIndex > minNonCategoryIndex ? toIndex - 1 : toIndex;
+    if (adjustedToIndex > fromIndex && !isWithinRange) {
+      adjustedToIndex = adjustedToIndex - 1;
     }
     newOrder.splice(adjustedToIndex, 0, moved);
     return newOrder;

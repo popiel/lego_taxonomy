@@ -174,6 +174,12 @@ describe('ColumnOrder', () => {
         expect(result).toBeGreaterThan(3);
       });
 
+      it('should place name column after category group when dropped between category columns', () => {
+        const result = moveColumn(COLUMN_IDS, 7, 1);
+        expect(result.slice(0, 4)).toEqual(['category', 'category2', 'category3', 'category4']);
+        expect(result[4]).toBe('name');
+      });
+
       it('should keep categories contiguous after repositioning', () => {
         const orderAfterCategoryMove = ['image', 'color', 'category', 'category2', 'category3', 'category4', 'quantity', 'name', 'partNumber'];
         const categoryIndices = orderAfterCategoryMove
