@@ -1,0 +1,104 @@
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .description {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .input-section {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .input-section input[type="file"] {
+            margin-top: 10px;
+        }
+        .output-section {
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            font-size: 14px;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        th[draggable="true"] {
+            cursor: grab;
+            user-select: none;
+        }
+        th.dragging {
+            opacity: 0.5;
+            background-color: #ddd;
+        }
+        th.drag-over {
+            background-color: #b3e5fc;
+            outline: 2px solid #0288D1;
+            outline-offset: -2px;
+        }
+        .drop-indicator {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background-color: #00E676;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 8px #00E676;
+        }
+        .drop-indicator.before {
+            left: -3px;
+        }
+        .drop-indicator.after {
+            right: -3px;
+        }
+        .source-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .file-name {
+            font-weight: bold;
+            color: #333;
+        }
+        #resetColumnsBtn {
+            padding: 5px 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #resetColumnsBtn:hover {
+            background-color: #e0e0e0;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .no-results {
+            color: #666;
+            font-style: italic;
+        }
+        .error-message {
+            color: #c00;
+            font-weight: bold;
+        }
