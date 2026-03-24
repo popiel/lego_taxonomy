@@ -28,3 +28,4 @@ src/test/resources/simple/
 src/test/resources/pacer/
 bricklink_ids.json
 nul
+/node_modules/
