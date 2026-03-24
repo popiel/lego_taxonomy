@@ -146,7 +146,7 @@
         const constrainedIndex = window.columnOrder.constrainDropTarget(
             currentOrder,
             targetIndex,
-            draggedColType !== 'category'
+            draggedColType === 'category'
         );
         return constrainedIndex === targetIndex;
     }
@@ -156,7 +156,7 @@
         const targetColId = th.dataset.colId;
         const fromIndex = currentOrder.indexOf(draggedColId);
         let toIndex = currentOrder.indexOf(targetColId);
-        toIndex = window.columnOrder.constrainDropTarget(currentOrder, toIndex, draggedColType !== 'category');
+        toIndex = window.columnOrder.constrainDropTarget(currentOrder, toIndex, draggedColType === 'category');
         if (fromIndex !== toIndex) {
             if (draggedColType === 'category') {
                 currentOrder = window.columnOrder.moveCategoryGroup(currentOrder, fromIndex, toIndex);

@@ -174,6 +174,13 @@ describe('ColumnOrder', () => {
         expect(result).toBeGreaterThan(3);
       });
 
+      it('should not show drop indicator when hovering over category columns while dragging non-category', () => {
+        expect(constrainDropTarget(COLUMN_IDS, 0, false)).not.toBe(0);
+        expect(constrainDropTarget(COLUMN_IDS, 1, false)).not.toBe(1);
+        expect(constrainDropTarget(COLUMN_IDS, 2, false)).not.toBe(2);
+        expect(constrainDropTarget(COLUMN_IDS, 3, false)).not.toBe(3);
+      });
+
       it('should place name column after category group when dropped between category columns', () => {
         const result = moveColumn(COLUMN_IDS, 7, 1);
         expect(result.slice(0, 4)).toEqual(['category', 'category2', 'category3', 'category4']);
