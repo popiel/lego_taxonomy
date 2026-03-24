@@ -47,24 +47,9 @@
     }
 
 
+    function computeDropTarget(x) {
         const ths = document.querySelectorAll('th[data-col-id]');
         const range = getCategoryRange(currentOrder);
-        const isDraggingCategory = draggedColType === 'category';
-
-        let draggedIndices;
-        if (isDraggingCategory) {
-            draggedIndices = [];
-            for (let i = 0; i < currentOrder.length; i++) {
-                if (CATEGORY_COLUMNS.includes(currentOrder[i])) {
-                    draggedIndices.push(i);
-                }
-            }
-        } else {
-            draggedIndices = [draggedColumnIndex];
-        }
-
-        const minDragged = Math.min(...draggedIndices);
-        const maxDragged = Math.max(...draggedIndices);
 
         for (let i = 0; i < ths.length; i++) {
             const th = ths[i];
@@ -73,12 +58,12 @@
             const midX = rect.left + rect.width / 2;
 
             if (x < rect.right) {
-		if (th.dataset.colId === 'category' || th.dataset.colId === 'category2') {
+                if (th.dataset.colId === 'category' || th.dataset.colId === 'category2') {
                     return { columnIndex: range.start, edge: 'left' };
-		}
-		if (th.dataset.colId === 'category3' || th.dataset.colId === 'category4') {
+                }
+                if (th.dataset.colId === 'category3' || th.dataset.colId === 'category4') {
                     return { columnIndex: range.end, edge: 'right' };
-		}
+                }
                 let targetEdge;
                 if (x < midX) {
                     targetEdge = 'left';
@@ -90,20 +75,18 @@
             }
         }
 
-        // Past the last column - target is end of table
         return { columnIndex: currentOrder.length - 1, edge: 'end' };
     }
 
     function computeDropPosition(target) {
-        const range = getCategoryRange(currentOrder);
         const isDraggingCategory = draggedColType === 'category';
 
-	let tp;
-	if (target.edge === 'left') {
-	    tp = target.columnIndex;
-	} else {
-	    tp = target.columnIndex + 1;
-	}
+        let tp;
+        if (target.edge === 'left') {
+            tp = target.columnIndex;
+        } else {
+            tp = target.columnIndex + 1;
+        }
 
         let draggedIndices;
         if (isDraggingCategory) {
@@ -120,9 +103,9 @@
         const minDragged = Math.min(...draggedIndices);
         const maxDragged = Math.max(...draggedIndices);
 
-	if (tp >= minDragged && tp <= maxDragged + 1) {
+        if (tp >= minDragged && tp <= maxDragged + 1) {
             return { dropPosition: minDragged, highlightType: 'box' };
-	}
+        }
         return { dropPosition: tp, highlightType: 'line' };
     }
 
