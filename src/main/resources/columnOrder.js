@@ -41,8 +41,11 @@
     const newOrder = [...order];
     const [moved] = newOrder.splice(fromIndex, 1);
     const minNonCategoryIndex = range.end + 1;
-    const insertIndex = toIndex > fromIndex && toIndex > minNonCategoryIndex ? toIndex - 1 : toIndex;
-    newOrder.splice(insertIndex, 0, moved);
+    let adjustedToIndex = toIndex;
+    if (toIndex > fromIndex) {
+      adjustedToIndex = toIndex > minNonCategoryIndex ? toIndex - 1 : toIndex;
+    }
+    newOrder.splice(adjustedToIndex, 0, moved);
     return newOrder;
   }
 

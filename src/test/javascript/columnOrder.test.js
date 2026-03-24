@@ -167,6 +167,13 @@ describe('ColumnOrder', () => {
         expect(result).toBeGreaterThan(category4Index);
       });
 
+      it('should not allow non-category column to insert between category columns in default order', () => {
+        const nameIndex = getColumnIndex(COLUMN_IDS, 'name');
+        expect(nameIndex).toBe(7);
+        const result = constrainDropTarget(COLUMN_IDS, 1, false);
+        expect(result).toBeGreaterThan(3);
+      });
+
       it('should keep categories contiguous after repositioning', () => {
         const orderAfterCategoryMove = ['image', 'color', 'category', 'category2', 'category3', 'category4', 'quantity', 'name', 'partNumber'];
         const categoryIndices = orderAfterCategoryMove
