@@ -178,6 +178,34 @@ describe('ColumnOrder', () => {
         moveCategoryGroup(COLUMN_IDS, 0, 6);
         expect(COLUMN_IDS).toEqual(copy);
       });
+
+      it('should not allow moving category column within category range', () => {
+        const result = moveCategoryGroup(COLUMN_IDS, 0, 2);
+        expect(result).toEqual(COLUMN_IDS);
+      });
+
+      it('should not allow moving middle category column within category range', () => {
+        const result = moveCategoryGroup(COLUMN_IDS, 1, 3);
+        expect(result).toEqual(COLUMN_IDS);
+      });
+
+      it('should preserve category column order when moving to end', () => {
+        const result = moveCategoryGroup(COLUMN_IDS, 0, 7);
+        const categoryOrder = result.filter(col => CATEGORY_COLUMNS.includes(col));
+        expect(categoryOrder).toEqual(['category', 'category2', 'category3', 'category4']);
+      });
+
+      it('should preserve category column order when moving to middle of non-category', () => {
+        const result = moveCategoryGroup(COLUMN_IDS, 0, 5);
+        const categoryOrder = result.filter(col => CATEGORY_COLUMNS.includes(col));
+        expect(categoryOrder).toEqual(['category', 'category2', 'category3', 'category4']);
+      });
+
+      it('should preserve category column order in any valid move', () => {
+        const result = moveCategoryGroup(COLUMN_IDS, 2, 7);
+        const categoryOrder = result.filter(col => CATEGORY_COLUMNS.includes(col));
+        expect(categoryOrder).toEqual(['category', 'category2', 'category3', 'category4']);
+      });
     });
   });
 });

@@ -41,9 +41,9 @@ function moveCategoryGroup(order, fromIndex, toIndex) {
     return moveColumn(order, fromIndex, toIndex);
   }
   
-  const targetIsInCategoryRange = toIndex <= CATEGORY_END + 1;
+  const targetIsInCategoryRange = toIndex <= CATEGORY_END;
   if (targetIsInCategoryRange) {
-    return moveColumn(order, fromIndex, toIndex);
+    return [...order];
   }
   
   const categoryCount = categoryColumnsInOrder.length;

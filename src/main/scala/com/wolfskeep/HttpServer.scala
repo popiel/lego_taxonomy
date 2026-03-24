@@ -264,22 +264,25 @@ object Routes {
             background-color: #ddd;
         }
         th.drag-over {
-            background-color: #e0e0e0;
+            background-color: #b3e5fc;
+            outline: 2px solid #0288D1;
+            outline-offset: -2px;
         }
         .drop-indicator {
             position: absolute;
             top: 0;
             bottom: 0;
-            width: 4px;
-            background-color: #4CAF50;
+            width: 6px;
+            background-color: #00E676;
             pointer-events: none;
             z-index: 10;
+            box-shadow: 0 0 8px #00E676;
         }
         .drop-indicator.before {
-            left: -2px;
+            left: -3px;
         }
         .drop-indicator.after {
-            right: -2px;
+            right: -3px;
         }
         .source-info {
             display: flex;
@@ -532,7 +535,7 @@ object Routes {
                 const rect = th.getBoundingClientRect();
                 const isAfter = clientX > rect.left + rect.width / 2;
                 const indicator = document.createElement('div');
-                indicator.className = `drop-indicator ${isAfter ? 'after' : 'before'}`;
+                indicator.className = 'drop-indicator ' + (isAfter ? 'after' : 'before');
                 th.style.position = 'relative';
                 th.appendChild(indicator);
             }
@@ -554,8 +557,10 @@ object Routes {
             }
 
             function canDropInPosition(th) {
-                if (draggedColType === 'category') return true;
                 const targetIndex = currentOrder.indexOf(th.dataset.colId);
+                if (draggedColType === 'category') {
+                    return targetIndex > CATEGORY_END;
+                }
                 return targetIndex < CATEGORY_START || targetIndex > CATEGORY_END;
             }
 
@@ -582,10 +587,8 @@ object Routes {
                 const firstCategoryIndex = currentOrder.findIndex(col => CATEGORY_COLUMNS.includes(col));
                 const categoryCount = CATEGORY_COLUMNS.length;
                 
-                const targetIsInCategoryRange = toIndex <= CATEGORY_END + 1;
+                const targetIsInCategoryRange = toIndex <= CATEGORY_END;
                 if (targetIsInCategoryRange) {
-                    const [moved] = currentOrder.splice(fromIndex, 1);
-                    currentOrder.splice(toIndex, 0, moved);
                     return;
                 }
                 
