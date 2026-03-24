@@ -144,8 +144,12 @@
                     dropPosition = range.end + 1;
                 }
             } else {
-                // For non-category: if within category range, move to after categories
-                if (target.columnIndex >= range.start && target.columnIndex <= range.end) {
+                // For non-category: 
+                // - If at the start of category range, allow position 0
+                // - If elsewhere in category range, move to after categories
+                if (target.columnIndex === range.start) {
+                    dropPosition = 0;
+                } else if (target.columnIndex >= range.start && target.columnIndex <= range.end) {
                     dropPosition = range.end + 1;
                 } else {
                     dropPosition = target.columnIndex;

@@ -361,6 +361,13 @@ describe('ColumnOrder', () => {
   });
 
   describe('integration scenarios', () => {
+    it('should handle dragging color to beginning of table', () => {
+      // Color is at index 5, dragging to beginning (before category columns)
+      const result = moveToDropPosition(COLUMN_IDS, 5, false, 0);
+      // Should move color to position 0
+      expect(result[0]).toBe('color');
+    });
+
     it('should handle dragging name column to between category columns', () => {
       const result = moveToDropPosition(COLUMN_IDS, 7, false, 1);
       // Position 1 is in category range, effectivePos = 5, insertIndex = 4
