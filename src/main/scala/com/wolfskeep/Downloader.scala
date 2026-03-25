@@ -28,10 +28,11 @@ object Downloader {
   final case class Downloaded(url: String, content: String) extends Response
   final case class NotChanged(url: String) extends Response
   final case class Failed(url: String, reason: String) extends Response
+  final case class TooManyRequests(url: String) extends Response
 
   private case class State(cookies: Map[String, Seq[HttpCookie]])
 
-  def apply(retryInterval: FiniteDuration = 60.seconds): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
+  def apply(retryInterval: FiniteDuration = 60.seconds, retryOn429: Boolean = true): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
     Behaviors.setup { context =>
       context.log.info(s"===> cookie-parsing-mode = ${context.system.settings.config.getString("akka.http.parsing.cookie-parsing-mode")}")
 
@@ -39,11 +40,16 @@ object Downloader {
       val retryIntervalValue = retryInterval
       val log = context.log
 
-      def scheduleRetry(url: String, replyTo: ActorRef[Response], since: Option[DateTime]): Command = {
-        context.log.warn(s"Received 429, waiting $retryIntervalValue before retrying $url")
-        val retryMsg: Command = Fetch(url, replyTo, since)
-        timers.startSingleTimer(s"retry-$url", retryMsg, retryIntervalValue)
-        NoOp
+      def handle429(url: String, replyTo: ActorRef[Response], since: Option[DateTime]): Command = {
+        if (retryOn429) {
+          context.log.warn(s"Received 429, waiting $retryIntervalValue before retrying $url")
+          val retryMsg: Command = Fetch(url, replyTo, since)
+          timers.startSingleTimer(s"retry-$url", retryMsg, retryIntervalValue)
+          NoOp
+        } else {
+          replyTo ! TooManyRequests(url)
+          NoOp
+        }
       }
 
       def getDomain(url: String): String = {
@@ -93,7 +99,7 @@ object Downloader {
 
         if (domain.toLowerCase.contains("brickset")) {
           log.info(s"Brickset request: $url")
-          requestWithModified.headers.foreach(h => log.info(s"  Request header: ${h.name} = ${h.value}"))
+          // requestWithModified.headers.foreach(h => log.debug(s"  Request header: ${h.name} = ${h.value}"))
         }
 
         val responseFuture = Http(context.system.classicSystem)
@@ -101,7 +107,7 @@ object Downloader {
           .flatMap { res =>
             if (domain.toLowerCase.contains("brickset")) {
               log.info(s"Brickset response: ${res.status}")
-              res.headers.foreach(h => log.info(s"  Response header: ${h.name} = ${h.value}"))
+              // res.headers.foreach(h => log.debug(s"  Response header: ${h.name} = ${h.value}"))
             }
             if (res.status == StatusCodes.NotModified) {
               Future.successful(Left((None, None, None)))
@@ -136,7 +142,7 @@ object Downloader {
                 val newCookies = headers.map(h => extractCookiesFromHeaders(h, domain)).getOrElse(Nil)
                 WrappedResult(url, finalUrl, content.getOrElse(""), replyTo, newCookies)
             }
-          case scala.util.Failure(ex: TooManyRequestsException) => scheduleRetry(url, replyTo, since)
+          case scala.util.Failure(ex: TooManyRequestsException) => handle429(url, replyTo, since)
           case scala.util.Failure(ex) => WrappedFailure(url, ex, replyTo)
         }
       }

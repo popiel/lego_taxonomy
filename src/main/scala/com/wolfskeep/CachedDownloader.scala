@@ -46,7 +46,7 @@ object CachedDownloader {
               running(State(state.pending + (url -> newInfo)), downloader, cache)
             case None =>
               // start new fetch
-              def networkFetch(since: Option[DateTime], value: Option[String]): Future[Response] = {
+def networkFetch(since: Option[DateTime], value: Option[String]): Future[Response] = {
                 downloader.ask(Downloader.Fetch(url, _, since)).map {
                   case Downloader.Downloaded(key, content) =>
                     cache ! DiskCache.Insert(key, content)
@@ -56,7 +56,9 @@ object CachedDownloader {
                     Downloaded(key, value.get)
                   case Downloader.Failed(key, reason) =>
                     Failed(key, ErrorMessage(reason))
-                  }
+                  case Downloader.TooManyRequests(key) =>
+                    Failed(key, ErrorMessage("HTTP 429 Too Many Requests"))
+                }
               }
 
               context.pipeToSelf(

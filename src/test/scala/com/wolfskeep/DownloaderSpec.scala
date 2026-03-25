@@ -129,6 +129,26 @@ class DownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       attempt should ===(2) // ensure that the retry actually happened
     }
 
+    "return TooManyRequests when retryOn429 is false" in {
+      val route: Route = path("no-retry") {
+        get {
+          complete(StatusCodes.TooManyRequests)
+        }
+      }
+      val binding = Await.result(Http()(testKit.system.classicSystem).newServerAt("localhost", 0).bind(route), 3.seconds)
+      val port = binding.localAddress.getPort
+
+      try {
+        val probe = createTestProbe[Downloader.Response]()
+        val downloader = spawn(Downloader(retryOn429 = false))
+        downloader ! Downloader.Fetch(s"http://localhost:$port/no-retry", probe.ref)
+        val msg = probe.expectMessageType[Downloader.TooManyRequests]
+        msg.url should ===(s"http://localhost:$port/no-retry")
+      } finally {
+        Await.result(binding.unbind(), 3.seconds)
+      }
+    }
+
     "fetch inventory from brickset.com and return CSV content" in {
       val probe = createTestProbe[Downloader.Response]()
       val downloader = spawn(Downloader())
