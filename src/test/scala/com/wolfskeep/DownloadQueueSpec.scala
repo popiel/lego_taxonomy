@@ -1,12 +1,8 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import akka.actor.typed.{ActorRef, Behavior}
-import akka.actor.typed.scaladsl.Behaviors
 import org.scalatest.wordspec.AnyWordSpecLike
-import com.wolfskeep.DownloadQueue.{Downloaded => QDownloaded}
-import com.wolfskeep.DownloadQueue.{Failed => QFailed}
-import com.wolfskeep.DownloadQueue.{NotChanged => QNotChanged}
+import akka.actor.typed.ActorRef
 
 import scala.concurrent.duration._
 
@@ -15,7 +11,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
     "pass through Downloaded responses" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
-      val replyProbe = createTestProbe[DownloadQueue.Response]("reply")
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
       
       queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
       
@@ -23,32 +19,33 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       fetchMsg.url should ===("http://example.com/test")
       fetchMsg.replyTo ! Downloader.Downloaded("http://example.com/test", "content")
       
-      replyProbe.expectMessage(QDownloaded("http://example.com/test", "content"))
+      replyProbe.expectMessage(Downloader.Downloaded("http://example.com/test", "content"))
     }
     
     "pass through NotChanged responses" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
-      val replyProbe = createTestProbe[DownloadQueue.Response]("reply")
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
       
       queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
       
       val fetchMsg = downloaderProbe.expectMessageType[Downloader.Fetch]
       fetchMsg.replyTo ! Downloader.NotChanged("http://example.com/test")
       
-      replyProbe.expectMessage(QNotChanged("http://example.com/test"))
+      replyProbe.expectMessage(Downloader.NotChanged("http://example.com/test"))
     }
     
-    "pass through Failed responses" in {val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
+    "pass through Failed responses" in {
+      val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
-      val replyProbe = createTestProbe[DownloadQueue.Response]("reply")
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
       
       queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
       
       val fetchMsg = downloaderProbe.expectMessageType[Downloader.Fetch]
       fetchMsg.replyTo ! Downloader.Failed("http://example.com/test", "error message")
       
-      val response = replyProbe.expectMessageType[DownloadQueue.Failed]
+      val response = replyProbe.expectMessageType[Downloader.Failed]
       response.url should ===("http://example.com/test")
       response.reason should ===("error message")
     }
@@ -58,7 +55,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
       
       val replies = (1 to 5).map { i =>
-        val replyProbe = createTestProbe[DownloadQueue.Response](s"reply-$i")
+        val replyProbe = createTestProbe[Downloader.Response](s"reply-$i")
         queue ! DownloadQueue.Fetch(s"http://example.com/test$i", replyProbe.ref)
         replyProbe
       }
@@ -95,7 +92,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val queue = spawn(DownloadQueue(concurrencyLimit = 1, downloaderProbe.ref))
       
       val replies = (1 to 3).map { i =>
-        val replyProbe = createTestProbe[DownloadQueue.Response](s"reply-$i")
+        val replyProbe = createTestProbe[Downloader.Response](s"reply-$i")
         queue ! DownloadQueue.Fetch(s"http://example.com/test$i", replyProbe.ref)
         replyProbe
       }
@@ -104,13 +101,13 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val fetch1 = downloaderProbe.expectMessageType[Downloader.Fetch]
       fetch1.url should ===("http://example.com/test1")
       fetch1.replyTo ! Downloader.Downloaded("http://example.com/test1", "content1")
-      replies(0).expectMessage(QDownloaded("http://example.com/test1", "content1"))
+      replies(0).expectMessage(Downloader.Downloaded("http://example.com/test1", "content1"))
       
       // Second request
       val fetch2 = downloaderProbe.expectMessageType[Downloader.Fetch]
       fetch2.url should ===("http://example.com/test2")
       fetch2.replyTo ! Downloader.Downloaded("http://example.com/test2", "content2")
-      replies(1).expectMessage(QDownloaded("http://example.com/test2", "content2"))
+      replies(1).expectMessage(Downloader.Downloaded("http://example.com/test2", "content2"))
       
       // Third request
       val fetch3 = downloaderProbe.expectMessageType[Downloader.Fetch]
@@ -120,7 +117,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
     "requeue on ask timeout without pausing" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 1, downloaderProbe.ref, askTimeout = 50.millis))
-      val replyProbe = createTestProbe[DownloadQueue.Response]("reply")
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
       
       queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
       
@@ -137,13 +134,13 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       
       // Now respond successfully
       fetch2.replyTo ! Downloader.Downloaded("http://example.com/test", "content")
-      replyProbe.expectMessage(QDownloaded("http://example.com/test", "content"))
+      replyProbe.expectMessage(Downloader.Downloaded("http://example.com/test", "content"))
     }
     
     "send Failed on non-timeout exceptions" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
-      val replyProbe = createTestProbe[DownloadQueue.Response]("reply")
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
       
       queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
       
@@ -151,7 +148,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       // Simulate connection failure
       fetchMsg.replyTo ! Downloader.Failed("http://example.com/test", "connection refused")
       
-      val response = replyProbe.expectMessageType[DownloadQueue.Failed]
+      val response = replyProbe.expectMessageType[Downloader.Failed]
       response.url should ===("http://example.com/test")
       response.reason should ===("connection refused")
     }
@@ -159,8 +156,8 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
     "pause after TooManyRequests using pauseDuration" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 1, downloaderProbe.ref, pauseDuration = 500.millis))
-      val replyProbe1 = createTestProbe[DownloadQueue.Response]("reply1")
-      val replyProbe2 = createTestProbe[DownloadQueue.Response]("reply2")
+      val replyProbe1 = createTestProbe[Downloader.Response]("reply1")
+      val replyProbe2 = createTestProbe[Downloader.Response]("reply2")
       
       // Send first request
       queue ! DownloadQueue.Fetch("http://example.com/test1", replyProbe1.ref)
@@ -189,13 +186,13 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val retryFetch2 = downloaderProbe.expectMessageType[Downloader.Fetch](1.second)
       retryFetch2.url should ===("http://example.com/test2")
       retryFetch2.replyTo ! Downloader.Downloaded("http://example.com/test2", "content2")
-      replyProbe2.expectMessage(QDownloaded("http://example.com/test2", "content2"))
+      replyProbe2.expectMessage(Downloader.Downloaded("http://example.com/test2", "content2"))
       
       // Now test1 should be retried
       val retryFetch1 = downloaderProbe.expectMessageType[Downloader.Fetch]
       retryFetch1.url should ===("http://example.com/test1")
       retryFetch1.replyTo ! Downloader.Downloaded("http://example.com/test1", "content1")
-      replyProbe1.expectMessage(QDownloaded("http://example.com/test1", "content1"))
+      replyProbe1.expectMessage(Downloader.Downloaded("http://example.com/test1", "content1"))
     }
     
     "handle multiple concurrent requests" in {
@@ -203,7 +200,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       val queue = spawn(DownloadQueue(concurrencyLimit = 3, downloaderProbe.ref))
       
       val replies = (1 to 3).map { i =>
-        val replyProbe = createTestProbe[DownloadQueue.Response](s"reply-$i")
+        val replyProbe = createTestProbe[Downloader.Response](s"reply-$i")
         queue ! DownloadQueue.Fetch(s"http://example.com/test$i", replyProbe.ref)
         replyProbe
       }
@@ -213,6 +210,7 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
         val fetch = downloaderProbe.expectMessageType[Downloader.Fetch]
         fetch.url
       }
-      fetchedUrls.toSet should ===(Set("http://example.com/test1", "http://example.com/test2", "http://example.com/test3"))}
+      fetchedUrls.toSet should ===(Set("http://example.com/test1", "http://example.com/test2", "http://example.com/test3"))
+    }
   }
 }

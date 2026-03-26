@@ -11,14 +11,11 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 object DownloadQueue {
+  // Public command - mirrors Downloader.Fetch but allows internal messages in same protocol
   sealed trait Command
-  final case class Fetch(url: String, replyTo: ActorRef[Response], since: Option[DateTime] = None) extends Command
+  final case class Fetch(url: String, replyTo: ActorRef[Downloader.Response], since: Option[DateTime] = None) extends Command
   
-  sealed trait Response { def url: String }
-  final case class Downloaded(url: String, content: String) extends Response
-  final case class NotChanged(url: String) extends Response
-  final case class Failed(url: String, reason: String) extends Response
-  
+  // Internal commands
   private final case class WrappedResult(result: Try[Downloader.Response], request: Fetch) extends Command
   private case object Wakeup extends Command
   
@@ -48,7 +45,9 @@ object DownloadQueue {
             case _ =>
               if (state.activeRequests.size < concurrencyLimit && state.waitingQueue.nonEmpty) {
                 val (request, newQueue) = state.waitingQueue.dequeue
-                context.ask(downloader, (ref: ActorRef[Downloader.Response]) => Downloader.Fetch(request.url, ref, request.since)) {
+                context.ask(downloader, (ref: ActorRef[Downloader.Response]) =>
+                  Downloader.Fetch(request.url, ref, request.since)
+                ) {
                   case Success(response) => WrappedResult(Success(response), request)
                   case Failure(ex) => WrappedResult(Failure(ex), request)
                 }
@@ -68,17 +67,17 @@ object DownloadQueue {
             running(processNextFetch(newState))
           
           case (_, WrappedResult(Success(Downloader.Downloaded(url, content)), request)) =>
-            request.replyTo ! Downloaded(url, content)
+            request.replyTo ! Downloader.Downloaded(url, content)
             val newActive = state.activeRequests - request
             running(processNextFetch(state.copy(activeRequests = newActive)))
           
           case (_, WrappedResult(Success(Downloader.NotChanged(url)), request)) =>
-            request.replyTo ! NotChanged(url)
+            request.replyTo ! Downloader.NotChanged(url)
             val newActive = state.activeRequests - request
             running(processNextFetch(state.copy(activeRequests = newActive)))
           
           case (_, WrappedResult(Success(Downloader.Failed(url, reason)), request)) =>
-            request.replyTo ! Failed(url, reason)
+            request.replyTo ! Downloader.Failed(url, reason)
             val newActive = state.activeRequests - request
             running(processNextFetch(state.copy(activeRequests = newActive)))
           
@@ -96,9 +95,10 @@ object DownloadQueue {
                 val newActive = state.activeRequests - request
                 running(processNextFetch(state.copy(waitingQueue = newWaiting, activeRequests = newActive)))
               case _ =>
-                request.replyTo ! Failed(request.url, ex.getMessage)
+                request.replyTo ! Downloader.Failed(request.url, ex.getMessage)
                 val newActive = state.activeRequests - request
-                running(processNextFetch(state.copy(activeRequests = newActive)))}
+                running(processNextFetch(state.copy(activeRequests = newActive)))
+            }
           
           case (_, Wakeup) =>
             running(processNextFetch(state.copy(pausedUntil = None)))

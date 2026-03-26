@@ -27,13 +27,14 @@ object CachedDownloader {
   private case class PendingInfo(replyTos: List[ActorRef[Response]])
   private case class State(pending: Map[String, PendingInfo])
 
-  def apply(cache: ActorRef[DiskCache.Command]): Behavior[Command] = Behaviors.setup { context =>
-    val downloader = context.spawn(Downloader(), "downloader")
+def apply(cache: ActorRef[DiskCache.Command], concurrencyLimit: Int = 10): Behavior[Command] = Behaviors.setup { context =>
+    val baseDownloader = context.spawn(Downloader(retryOn429 = false), "downloader")
+    val downloader = context.spawn(DownloadQueue(concurrencyLimit, baseDownloader), "queue")
 
     running(State(Map.empty), downloader, cache)
   }
 
-  private def running(state: State, downloader: ActorRef[Downloader.Command], cache: ActorRef[DiskCache.Command]): Behavior[Command] = {
+  private def running(state: State, downloader: ActorRef[DownloadQueue.Command], cache: ActorRef[DiskCache.Command]): Behavior[Command] = {
     val behavior = Behaviors.receive[Command] { (context, message) =>
       implicit val scheduler = context.system.scheduler
       import context.executionContext
@@ -46,8 +47,8 @@ object CachedDownloader {
               running(State(state.pending + (url -> newInfo)), downloader, cache)
             case None =>
               // start new fetch
-def networkFetch(since: Option[DateTime], value: Option[String]): Future[Response] = {
-                downloader.ask(Downloader.Fetch(url, _, since)).map {
+              def networkFetch(since: Option[DateTime], value: Option[String]): Future[Response] = {
+                downloader.ask(DownloadQueue.Fetch(url, _, since)).map {
                   case Downloader.Downloaded(key, content) =>
                     cache ! DiskCache.Insert(key, content)
                     Downloaded(key, content)
