@@ -24,8 +24,8 @@ object CachedDownloader {
   final case class Failed(url: String, reason: Throwable) extends Response
 
   // internal messages
-  private final case class CacheResult(url: String, result: Option[(String, String, Long)], replyTo: ActorRef[Response]) extends Command
-  private final case class ForegroundFetchDone(url: String, response: Response, replyTos: List[ActorRef[Response]]) extends Command
+  private final case class CacheResult(url: String, result: Option[(String, String, Long)]) extends Command
+  private final case class ForegroundFetchDone(url: String, response: Response) extends Command
   private final case class BackgroundRefreshDone(url: String) extends Command
 
   private case class PendingInfo(replyTos: List[ActorRef[Response]])
@@ -60,52 +60,45 @@ object CachedDownloader {
                 cache.ask(DiskCache.Fetch(url, _)).recover { case _ => DiskCache.NotFound(url) }
               ) {
                 case Success(DiskCache.FetchResult(key, value, timestamp)) =>
-                  CacheResult(url, Some((key, value, timestamp)), replyTo)
+                  CacheResult(url, Some((key, value, timestamp)))
                 case Success(DiskCache.NotFound(_)) =>
-                  CacheResult(url, None, replyTo)
+                  CacheResult(url, None)
                 case Failure(ex) =>
-                  CacheResult(url, None, replyTo)
+                  CacheResult(url, None)
               }
               // Add to pending optimistically
               running(State(state.pending + (url -> PendingInfo(List(replyTo))), state.refreshing), downloader, cache)
           }
 
-        case CacheResult(url, Some((key, value, timestamp)), replyTo) =>
+        case CacheResult(url, Some((key, value, timestamp))) =>
           // Cache hit
           val now = System.currentTimeMillis()
           val age = now - timestamp
 
-          if (age >= StaleThresholdMs && !state.refreshing.contains(url)) {
-            // Stale and not currently refreshing - return cached value and trigger background refresh
-            val info = state.pending.getOrElse(url, PendingInfo(Nil))
-            val allReplyTos = replyTo :: info.replyTos
-
-            // Return cached value to all callers
-            allReplyTos.foreach(_ ! Downloaded(key, value))
-
-            // Start background refresh
+          val nextRefreshing = if (age >= StaleThresholdMs && !state.refreshing.contains(url)) {
+            // Stale and not currently refreshing - trigger background refresh
             val since = DateTime(timestamp)
             startBackgroundRefresh(url, since, value, downloader, cache, context)
-            running(State(state.pending - url, state.refreshing + url), downloader, cache)
-
+            state.refreshing + url
           } else {
-            // Fresh or already refreshing - just return cached value
-            val info = state.pending.getOrElse(url, PendingInfo(Nil))
-            val allReplyTos = replyTo :: info.replyTos
-            allReplyTos.foreach(_ ! Downloaded(key, value))
-            running(State(state.pending - url, state.refreshing), downloader, cache)
+            state.refreshing
           }
 
-        case CacheResult(url, None, replyTo) =>
-          // Cache miss - need foreground fetch
+          // Return cached value to all callers
           val info = state.pending.getOrElse(url, PendingInfo(Nil))
-          val allReplyTos = replyTo :: info.replyTos
-          startForegroundFetch(url, None, None, allReplyTos, downloader, cache, context)
-          running(State(state.pending + (url -> PendingInfo(allReplyTos)), state.refreshing), downloader, cache)
+          info.replyTos.foreach(_ ! Downloaded(key, value))
 
-        case ForegroundFetchDone(url, response, replyTos) =>
+          running(State(state.pending - url, nextRefreshing), downloader, cache)
+
+        case CacheResult(url, None) =>
+          // Cache miss - need foreground fetch
+          startForegroundFetch(url, None, None, downloader, cache, context)
+          Behaviors.same
+
+        case ForegroundFetchDone(url, response) =>
           // Foreground fetch complete - reply to all waiting callers
-          replyTos.foreach(_ ! response)
+          val info = state.pending.getOrElse(url, PendingInfo(Nil))
+          info.replyTos.foreach(_ ! response)
           running(State(state.pending - url, state.refreshing), downloader, cache)
 
         case BackgroundRefreshDone(url) =>
@@ -119,7 +112,6 @@ object CachedDownloader {
     url: String,
     since: Option[DateTime],
     cachedValue: Option[String],
-    replyTos: List[ActorRef[Response]],
     downloader: ActorRef[DownloadQueue.Command],
     cache: ActorRef[DiskCache.Command],
     context: akka.actor.typed.scaladsl.ActorContext[Command]
@@ -129,21 +121,28 @@ object CachedDownloader {
     downloader.ask(DownloadQueue.Fetch(url, _, since)).onComplete {
       case Success(Downloader.Downloaded(_, content)) =>
         cache ! DiskCache.Insert(url, content)
-        context.self ! ForegroundFetchDone(url, Downloaded(url, content), replyTos)
+        context.self ! ForegroundFetchDone(url, Downloaded(url, content))
 
       case Success(Downloader.NotChanged(_)) =>
         // Server says cached value is still valid - update timestamp
-        cache ! DiskCache.Insert(url, cachedValue.get)
-        context.self ! ForegroundFetchDone(url, Downloaded(url, cachedValue.get), replyTos)
+        cachedValue match {
+          case Some(value) =>
+            cache ! DiskCache.Insert(url, value)
+            context.self ! ForegroundFetchDone(url, Downloaded(url, value))
+          case None =>
+            // Shouldn't happen: NotChanged without If-Modified-Since (no cached value)
+            // Treat as failure
+            context.self ! ForegroundFetchDone(url, Failed(url, ErrorMessage("Unexpected NotChanged without cached value")))
+        }
 
       case Success(Downloader.Failed(_, reason)) =>
-        context.self ! ForegroundFetchDone(url, Failed(url, ErrorMessage(reason)), replyTos)
+        context.self ! ForegroundFetchDone(url, Failed(url, ErrorMessage(reason)))
 
       case Success(Downloader.TooManyRequests(_)) =>
-        context.self ! ForegroundFetchDone(url, Failed(url, ErrorMessage("HTTP 429 Too Many Requests")), replyTos)
+        context.self ! ForegroundFetchDone(url, Failed(url, ErrorMessage("HTTP 429 Too Many Requests")))
 
       case Failure(ex) =>
-        context.self ! ForegroundFetchDone(url, Failed(url, ex), replyTos)
+        context.self ! ForegroundFetchDone(url, Failed(url, ex))
     }
   }
 
