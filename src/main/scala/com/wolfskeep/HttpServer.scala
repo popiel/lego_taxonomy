@@ -92,7 +92,16 @@ object Routes {
               case _ =>
                 fileUpload("inputFile") { case (fileInfo, byteSource) =>
                   implicit val timeout: Timeout = Timeout(10.seconds)
-                  val coloredPartsF = processUploadedFile(byteSource)
+                  val coloredPartsF = for {
+                    data <- rebrickableDataActor.ask(RebrickableHolder.GetData(_))
+                    colorIdToName = data.colors.map(c => c.id -> c.name).toMap
+                    elementIdToPartColor = data.elements.map { e =>
+                      val colorName = data.colorIdToColor.get(e.colorId).map(_.name).getOrElse(s"unknown-${e.colorId}")
+                      val partName = data.partNumToPart.get(e.partNum).map(_.name).getOrElse("")
+                      e.elementId -> (e.partNum, colorName, partName)
+                    }.toMap
+                    coloredParts <- processUploadedFile(byteSource, colorIdToName, elementIdToPartColor)
+                  } yield coloredParts
                   val processedParts = coloredPartsF.flatMap { coloredParts =>
                     partsProcessor.ask(PartsProcessor.ProcessParts(coloredParts, _))
                   }
@@ -204,7 +213,11 @@ object Routes {
     }
   }
 
-  private def processUploadedFile(byteSource: Source[ByteString, _])(implicit ec: ExecutionContext, materializer: Materializer): Future[List[ColoredPart]] = Future {
+  private def processUploadedFile(
+    byteSource: Source[ByteString, _],
+    colorIdToName: Map[Int, String],
+    elementIdToPartColor: Map[Long, (String, String, String)]
+  )(implicit ec: ExecutionContext, materializer: Materializer): Future[List[ColoredPart]] = Future {
     val inputStream = byteSource.runWith(StreamConverters.asInputStream())
     val bufferedStream = new BufferedInputStream(inputStream, 8192)
     bufferedStream.mark(8192)
@@ -215,7 +228,7 @@ object Routes {
       case e: Exception =>
         bufferedStream.reset()
         val csvReader = new CsvReader()
-        csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream))
+        csvReader.readColoredPartsFromReader(new InputStreamReader(bufferedStream), colorIdToName, elementIdToPartColor)
     } finally {
       inputStream.close()
     }

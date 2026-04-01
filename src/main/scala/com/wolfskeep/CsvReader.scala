@@ -5,45 +5,115 @@ import scala.io.Source
 import scala.util.Try
 
 class CsvReader {
-  def readColoredParts(filePath: String): List[ColoredPart] = {
-    readColoredPartsFromSource(Source.fromFile(filePath))
+  def readColoredParts(
+    filePath: String,
+    colorIdToName: Map[Int, String] = Map.empty,
+    elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
+  ): List[ColoredPart] = {
+    readColoredPartsFromSource(Source.fromFile(filePath), colorIdToName, elementIdToPartColor)
   }
 
-  def readColoredPartsFromString(content: String): List[ColoredPart] = {
-    readColoredPartsFromSource(Source.fromString(content))
+  def readColoredPartsFromString(
+    content: String,
+    colorIdToName: Map[Int, String] = Map.empty,
+    elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
+  ): List[ColoredPart] = {
+    readColoredPartsFromSource(Source.fromString(content), colorIdToName, elementIdToPartColor)
   }
 
-  def readColoredPartsFromReader(reader: Reader): List[ColoredPart] = {
+  def readColoredPartsFromReader(
+    reader: Reader,
+    colorIdToName: Map[Int, String] = Map.empty,
+    elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
+  ): List[ColoredPart] = {
     val bufferedReader = new java.io.BufferedReader(reader)
     val lines = scala.collection.Iterator.continually(bufferedReader.readLine()).takeWhile(_ != null).toList
-    parseLines(lines)
+    parseLines(lines, colorIdToName, elementIdToPartColor)
   }
 
-  private def readColoredPartsFromSource(source: Source): List[ColoredPart] = {
+  private def readColoredPartsFromSource(
+    source: Source,
+    colorIdToName: Map[Int, String] = Map.empty,
+    elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
+  ): List[ColoredPart] = {
     val lines = source.getLines().toList
-    parseLines(lines)
+    parseLines(lines, colorIdToName, elementIdToPartColor)
   }
 
-  private def parseLines(lines: List[String]): List[ColoredPart] = {
+  private def parseLines(
+    lines: List[String],
+    colorIdToName: Map[Int, String] = Map.empty,
+    elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
+  ): List[ColoredPart] = {
     if (lines.isEmpty) return Nil
 
     val headers = parseCsvLine(lines.head).map(_.trim)
-    val partNumberIndex = findColumnIndex(headers, Seq("partNumber", "DesignID", "BLItemNo"))
-    val colorIndex = findColumnIndex(headers, Seq("color", "Colour", "ColorName"))
-    val quantityIndex = findColumnIndex(headers, Seq("quantity", "Qty"))
+    val partNumberIndex = findColumnIndex(headers, Seq("Part", "partNumber", "DesignID", "BLItemNo"))
+    val colorIndex = findColumnIndex(headers, Seq("Color", "color", "Colour", "ColorName"))
+    val quantityIndex = findColumnIndex(headers, Seq("Quantity", "quantity", "Qty"))
     val nameIndex = findColumnIndex(headers, Seq("name", "ElementName", "PartName"))
-    val elementIdIndex = findColumnIndex(headers, Seq("ElementId", "ElementID", "element_id"))
+    val elementIdIndex = findColumnIndex(headers, Seq("ElementId", "ElementID", "element_id", "elementId"))
+    val isSpareIndex = findColumnIndex(headers, Seq("Is Spare"))
 
-    lines.tail.flatMap { line =>
+    val isElementOnlyMode = partNumberIndex.isEmpty && colorIndex.isEmpty && 
+      elementIdIndex.isDefined && elementIdToPartColor.nonEmpty
+
+    if (isElementOnlyMode) {
+      parseElementOnlyLines(lines.tail, elementIdIndex.get, quantityIndex, elementIdToPartColor)
+    } else {
+      parseStandardLines(lines.tail, partNumberIndex, colorIndex, quantityIndex, nameIndex, 
+        elementIdIndex, isSpareIndex, colorIdToName)
+    }
+  }
+
+  private def parseElementOnlyLines(
+    lines: List[String],
+    elementIdIndex: Int,
+    quantityIndex: Option[Int],
+    elementIdToPartColor: Map[Long, (String, String, String)]
+  ): List[ColoredPart] = {
+    lines.flatMap { line =>
       val fields = parseCsvLine(line)
       for {
-        partNumber <- partNumberIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
-        color <- colorIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
+        elementIdStr <- Try(fields(elementIdIndex).trim).toOption.filter(_.nonEmpty)
+        elementId <- Try(elementIdStr.toLong).toOption
         quantity <- quantityIndex.flatMap(i => Try(fields(i).trim.toInt).toOption)
       } yield {
-        val name = nameIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty).getOrElse("")
-        val elementId = elementIdIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
-        ColoredPart(partNumber, color, quantity, name, elementId)
+        val (partNumber, colorName, partName) = elementIdToPartColor.get(elementId)
+          .getOrElse((s"unknown-element-$elementId", "unknown-0", ""))
+        ColoredPart(partNumber, colorName, quantity, partName, Some(elementId.toString))
+      }
+    }
+  }
+
+  private def parseStandardLines(
+    lines: List[String],
+    partNumberIndex: Option[Int],
+    colorIndex: Option[Int],
+    quantityIndex: Option[Int],
+    nameIndex: Option[Int],
+    elementIdIndex: Option[Int],
+    isSpareIndex: Option[Int],
+    colorIdToName: Map[Int, String]
+  ): List[ColoredPart] = {
+    lines.flatMap { line =>
+      val fields = parseCsvLine(line)
+      val isSpare = isSpareIndex.flatMap(i => Try(fields(i).trim).toOption).exists(_.equalsIgnoreCase("TRUE"))
+      if (isSpare) None
+      else {
+        for {
+          partNumber <- partNumberIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
+          rawColor <- colorIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
+          quantity <- quantityIndex.flatMap(i => Try(fields(i).trim.toInt).toOption)
+        } yield {
+          val name = nameIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty).getOrElse("")
+          val elementId = elementIdIndex.flatMap(i => Try(fields(i).trim).toOption).filter(_.nonEmpty)
+          val color = rawColor.toIntOption match {
+            case Some(colorId) => colorIdToName.getOrElse(colorId, s"unknown-$colorId")
+            case None => rawColor
+          }
+          ColoredPart(partNumber, color, quantity, name, elementId)
+        }
       }
     }
   }
