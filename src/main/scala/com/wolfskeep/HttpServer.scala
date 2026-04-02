@@ -258,7 +258,8 @@ object Routes {
             </div>
             <div>
                 <label for="inputFile">Or upload file (.csv or .io):</label><br>
-                <input type="file" name="inputFile" id="inputFile" accept=".csv,.io">
+                <input type="file" name="inputFile" id="inputFile" accept=".csv,.io"><br>
+                Supported formats include Studio model file, Studio model summary export, BrickSet inventory, Rebrickable inventory, or LEGO Pick-A-Brick csv.
             </div>
         </form>
     </div>

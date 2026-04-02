@@ -23,6 +23,7 @@
         }
         .input-section input[type="file"] {
             margin-top: 10px;
+	    margin-bottom: 5px;
         }
         .output-section {
             margin-top: 20px;
