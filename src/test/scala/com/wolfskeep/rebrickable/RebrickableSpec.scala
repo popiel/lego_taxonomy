@@ -29,12 +29,12 @@ class RebrickableSpec extends AnyWordSpec {
 
     "parse Black color" in {
       val colors = Color.fromZip()
-      val black = colors.find(_.id == 0)
-      assert(black.isDefined)
-      assert(black.get.name == "Black")
-      assert(black.get.rgb == "05131D")
-      assert(black.get.yearFrom == 1957)
-      assert(black.get.yearTo == 2026)
+      val gray = colors.find(_.id == 8)
+      assert(gray.isDefined)
+      assert(gray.get.name == "Dark Gray")
+      assert(gray.get.rgb == "6D6E5C")
+      assert(gray.get.yearFrom == 1978)
+      assert(gray.get.yearTo == 2006)
     }
 
     "have multiple colors" in {
