@@ -44,6 +44,18 @@ object TaxonomyParser {
         val name = a.text().trim
         categories = Category(number, name, None) :: categories
       }
+      if (categories == Nil) {
+        val categoryAs = inlineResults.select("a[href^='https://brickarchitect.com/parts/category']").asScala
+        for {
+          a <- categoryAs
+          div = a.selectFirst("div.categorylistitem_name")
+          if div != null
+          number <- getCategoryNumber(a.attr("href"))
+        } {
+          val name = div.text().trim
+          categories = Category(number, name, None) :: categories
+        }
+      }
     }
     categories
   }

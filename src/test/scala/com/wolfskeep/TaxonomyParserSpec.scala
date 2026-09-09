@@ -15,6 +15,16 @@ class TaxonomyParserSpec extends AnyFlatSpec with Matchers {
     categories should contain (Category("12", "TECHNIC", None))
   }
 
+  "parseRootHtml" should "parse root_new.html correctly" in {
+    val html = Source.fromFile("src/test/resources/root_new.html").mkString
+    val categories = TaxonomyParser.parseRootHtml(html)
+
+    categories should have size 12
+
+    categories should contain (Category("1", "BASIC", None))
+    categories should contain (Category("12", "TECHNIC", None))
+  }
+
   "parseCategoryHtml" should "parse category-1.html correctly" in {
     val html = Source.fromFile("src/test/resources/category-1.html").mkString
     val url = "https://brickarchitect.com/parts/category-1?&retired=1&partstyle=1"
@@ -39,6 +49,27 @@ class TaxonomyParserSpec extends AnyFlatSpec with Matchers {
     part2 shouldBe defined
     part2.get.name shouldBe "6×6 Tile"
     part2.get.categories.map(_.number) should contain allOf ("1", "18", "38")
+  }
+
+  "parseCategoryHtml" should "parse category-2.html correctly" in {
+    val html = Source.fromFile("src/test/resources/category-2.html").mkString
+    val url = "https://brickarchitect.com/parts/category-2?&retired=1&partstyle=1"
+    val (categories, parts) = TaxonomyParser.parseCategoryHtml(url, html)
+
+    // Check categories
+    val wall = Category("2", "Wall", None)
+    val windowAndDoor = Category("19", "Window & Door", Some(wall))
+    val twoByWindow = Category("223", "2× Window", Some(windowAndDoor))
+
+    categories should contain (wall)
+    categories should contain (windowAndDoor)
+    categories should contain (twoByWindow)
+
+    // For parts
+    val part1 = parts.find(_.partNumber == "60592")
+    part1 shouldBe defined
+    part1.get.name shouldBe "1×2×2 Window Frame"
+    part1.get.categories.map(_.number) should contain allOf ("2", "19", "223")
   }
 
   it should "populate sequence numbers in extraction order" in {
