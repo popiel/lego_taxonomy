@@ -20,7 +20,7 @@ object TaxonomyFetcher {
   private case class FetchResponse(response: CachedDownloader.Response) extends Command
   private case class AskFailure(ex: Throwable) extends Command
 
-  private case class State(allCategories: Set[Category], allParts: List[LegoPart], pendingFetches: Int, replyTo: ActorRef[Response], partsToEnhance: List[LegoPart] = Nil)
+  private case class State(allCategories: Set[Category], allParts: List[LegoPart], pendingFetches: Int, partsToEnhance: List[LegoPart], replyTo: ActorRef[Response])
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = CachedDownloader.timeout
@@ -42,7 +42,7 @@ object TaxonomyFetcher {
           case scala.util.Success(resp) => FetchResponse(resp)
           case scala.util.Failure(ex)     => AskFailure(ex)
         }
-        collecting(State(Set.empty, Nil, 1, replyTo), downloader, cache)
+        collecting(State(Set.empty, Nil, 1, Nil, replyTo), downloader, cache)
       case _ =>
         Behaviors.unhandled
     }
@@ -86,10 +86,10 @@ object TaxonomyFetcher {
                 case scala.util.Failure(ex)     => AskFailure(ex)
               }
             }
-            val enhanceState = State(newCats, newParts, initialBatch.size, state.replyTo, remaining)
+            val enhanceState = State(newCats, newParts, initialBatch.size, remaining, state.replyTo)
             enhanceParts(enhanceState, downloader, cache)
           } else {
-            collecting(State(newCats, newParts, newPending, state.replyTo), downloader, cache)
+            collecting(State(newCats, newParts, newPending, Nil, state.replyTo), downloader, cache)
           }
         } else {
           collecting(state, downloader, cache)
@@ -155,7 +155,7 @@ object TaxonomyFetcher {
           state.replyTo ! TaxonomyFetched(TaxonomyData(state.allCategories, enhancedParts))
           idle(downloader, cache)
         } else {
-          enhanceParts(State(state.allCategories, enhancedParts, newPendingWithNext, state.replyTo, remaining), downloader, cache)
+          enhanceParts(State(state.allCategories, enhancedParts, newPendingWithNext, remaining, state.replyTo), downloader, cache)
         }
 
       case FetchResponse(CachedDownloader.Failed(_, reason)) =>
