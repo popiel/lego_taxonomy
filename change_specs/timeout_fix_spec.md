@@ -41,6 +41,22 @@ green. Implementation notes beyond the plan:
   rendered at natural size and warped the table columns. The lazy element
   now carries the same `style="max-width: ${maxTaxonomyWidth}px"` — the
   bound is baked in at render time and survives the JS `src` assignment.
+- Follow-up hardening (from the post-mortem of the two regressions):
+  the loader moved into `partsSorterImages.js`, a UMD module following
+  the `columnOrder.js` convention (module.exports for Jest,
+  `window.partsSorterImages` in the browser) with injectable
+  fetch/sleep/clock/createObjectURL, tested by the existing Jest suite
+  (no new dependency). `parts-sorter.js` delegates to it and the page
+  loads it via a cache-busted script tag.
+- Golden characterization (`RenderingGoldenSpec`) drives the real
+  TaxonomyHolder → PartsProcessor → Routes chain with image-bearing
+  fixtures and pins the exact image markup per lookup via. Its first run
+  caught a third drift the plan had missed: Miss rows (no legoPart at
+  all) were rendered with lazy image attributes, triggering pointless
+  LDraw zip lookups and Brickset resolves (and negative-cache pollution)
+  for unmatched part numbers. The renderer now emits lazy attributes
+  only for matched parts without a taxonomy image; Miss rows render an
+  empty cell, as before.
 
 ## Goals
 

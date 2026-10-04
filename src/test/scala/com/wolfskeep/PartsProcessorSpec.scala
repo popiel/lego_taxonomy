@@ -9,24 +9,28 @@ import scala.concurrent.duration._
 
 class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with BeforeAndAfterAll {
 
-  private val taxonomyParts = scala.io.Source.fromFile("parts.csv").getLines().drop(1).map { line =>
-    val fields = line.split(",").map(_.trim.replaceAll("^\"|\"$", ""))
-    val partNumber = fields(0)
-    val name = fields(1)
-    val categories = (2 to Math.min(5, fields.length - 1)).map { idx =>
-      Category((idx - 1).toString, fields(idx), None)
-    }.filter(_.name.nonEmpty).toList
+  private val taxonomyParts = List(
     LegoPart(
-      partNumber = partNumber,
-      name = name,
-      categories = categories,
+      partNumber = "4000",
+      name = "Doohickey",
+      categories = Nil,
       sequenceNumber = 0,
       altNumbers = Set.empty,
       imageUrl = None,
       imageWidth = None,
       imageHeight = None
+    ),
+    LegoPart(
+      partNumber = "3001",
+      name = "Brick 2 x 4",
+      categories = List(Category("1", "Basic", None)),
+      sequenceNumber = 0,
+      altNumbers = Set.empty,
+      imageUrl = Some("https://brickarchitect.com/label/partqrcode.php?part_num=3001"),
+      imageWidth = Some("120"),
+      imageHeight = Some("90")
     )
-  }.toList
+  )
 
   private val rebrickableDataActor = spawn(RebrickableHolder())
   private val taxonomyDataHolder = spawn(TaxonomyHolder(rebrickableDataActor))
@@ -104,6 +108,9 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       result.legoPart.get.partNumber should ===("3001xyz")
       result.legoPart.get.name should include("(modified)")
       result.legoPart.get.categories should not be empty
+      result.legoPart.get.imageUrl shouldBe None
+      result.legoPart.get.imageWidth shouldBe None
+      result.legoPart.get.imageHeight shouldBe None
     }
 
     "infer categories from a sibling part name prefix in the same upload" in {

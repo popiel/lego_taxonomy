@@ -25,7 +25,10 @@ class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
 
   private val lookupTaxonomyParts = List(
     LegoPart("3001", "Brick 2 x 4", List(basic), 1, Set.empty),
-    LegoPart("3069", "Tile 1 x 2", List(basic, tiles), 2, Set.empty),
+    LegoPart(
+      "3069", "Tile 1 x 2", List(basic, tiles), 2, Set.empty,
+      Some("https://brickarchitect.com/label/partqrcode.php?part_num=3069"), Some("100"), Some("60")
+    ),
     LegoPart("3022", "Plate 2 x 2", List(basic, plates), 3, Set.empty),
     LegoPart("3023", "Plate 1 x 2", List(basic, plates), 4, Set.empty),
     LegoPart("4000", "Doohickey", Nil, 5, Set.empty),
@@ -164,7 +167,7 @@ class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       result.legoPart.map(_.partNumber) shouldBe Some("3001")
     }
 
-    "resolve a patterned part number to its base part as Modified" in {
+    "resolve a patterned part number to its base part as Modified without the base part's image" in {
       val holder = holderWith(lookupTaxonomyData, stubRebrickable(rebrickableData))
 
       val result = lookup(holder, TaxonomyHolder.LookupPartRequest("3069pb01", None, "Tile 1 x 2 Patterned")).head
@@ -173,9 +176,12 @@ class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       result.legoPart.map(_.partNumber) shouldBe Some("3069pb01")
       result.legoPart.map(_.name) shouldBe Some("Tile 1 x 2 (modified)")
       result.legoPart.map(_.categories) shouldBe Some(List(basic, tiles))
+      result.legoPart.flatMap(_.imageUrl) shouldBe None
+      result.legoPart.flatMap(_.imageWidth) shouldBe None
+      result.legoPart.flatMap(_.imageHeight) shouldBe None
     }
 
-    "resolve an unknown part number through its element ID design as Modified" in {
+    "resolve an unknown part number through its element ID design as Modified, keeping the design part's image" in {
       val holder = holderWith(lookupTaxonomyData, stubRebrickable(rebrickableData))
 
       val result = lookup(holder, TaxonomyHolder.LookupPartRequest("whatever", Some("6116611"), "Tile 1 x 2")).head
@@ -183,6 +189,9 @@ class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
       result.via shouldBe TaxonomyHolder.Modified
       result.legoPart.map(_.partNumber) shouldBe Some("3069")
       result.legoPart.map(_.name) shouldBe Some("Tile 1 x 2")
+      result.legoPart.flatMap(_.imageUrl) shouldBe Some(
+        "https://brickarchitect.com/label/partqrcode.php?part_num=3069"
+      )
     }
 
     "report Miss when the element design is unknown to the taxonomy" in {

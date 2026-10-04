@@ -104,8 +104,9 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
   val route: Route = Routes.all(typedSystem, echoProcessor, rebrickableDataActor, fakeImageResolver())
 
   private val csvContent = """BLItemNo,ElementId,LdrawId,PartName,BLColorId,LDrawColorId,ColorName,ColorCategory,Qty,Weight
-3001,300123,3001.dat,Brick 2 x 4,7,1,Blue,Solid colors,2,2.32
-3001,300121,3001.dat,Brick 2 x 4,5,4,Red,Solid colors,1,2.32
+3001,300123,3001.dat,Brick 2 x 4,7,1,Blue,Solid Colors,2,2.32
+3001,300121,3001.dat,Brick 2 x 4,5,4,Red,Solid Colors,1,2.32
+3002,300125,3002.dat,Brick 2 x 3,7,2,Green,Solid Colors,1,1.60
 """
 
   private def csvUpload: Multipart.FormData =
@@ -137,6 +138,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("""<input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">""")
         responseBody should include("""<input type="file" name="inputFile" id="inputFile" accept=".csv,.io">""")
         responseBody should include("""<form method="POST" action="/parts-sorter" enctype="multipart/form-data" id="uploadForm">""")
+        responseBody should include("partsSorterImages.js")
       }
     }
 
@@ -157,32 +159,47 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
 
-    "render taxonomy images inline and lazy attributes for parts without one" in {
+    "render taxonomy images inline, lazy attributes for matched parts without one, and nothing for misses" in {
       val processor = fakeProcessor { cp =>
-        if (cp.color == "Blue") {
-          Some(LegoPart(
-            partNumber = cp.partNumber,
-            name = cp.name,
-            categories = List(Category("1", "Bricks", None)),
-            sequenceNumber = 0,
-            altNumbers = Set.empty,
-            imageUrl = Some("https://example.com/taxonomy.png"),
-            imageWidth = None,
-            imageHeight = None
-          ))
-        } else None
+        cp.color match {
+          case "Blue" =>
+            Some(LegoPart(
+              partNumber = cp.partNumber,
+              name = cp.name,
+              categories = List(Category("1", "Bricks", None)),
+              sequenceNumber = 0,
+              altNumbers = Set.empty,
+              imageUrl = Some("https://example.com/taxonomy.png"),
+              imageWidth = None,
+              imageHeight = None
+            ))
+          case "Red" =>
+            Some(LegoPart(
+              partNumber = cp.partNumber,
+              name = s"${cp.name} (modified)",
+              categories = List(Category("1", "Bricks", None)),
+              sequenceNumber = 0,
+              altNumbers = Set.empty,
+              imageUrl = None,
+              imageWidth = None,
+              imageHeight = None
+            ))
+          case _ =>
+            None
+        }
       }
       val attributeRoute: Route =
         Routes.all(typedSystem, processor, rebrickableDataActor, fakeImageResolver())
 
-        Post("/parts-sorter", csvUpload) ~> attributeRoute ~> check {
-          status should ===(StatusCodes.OK)
-          val responseBody = entityAs[String]
-          responseBody should include("""<img src="https://example.com/taxonomy.png"""")
-          responseBody should include("""<img alt="" style="max-width: 100px" data-image-ldraw="/part_images/2/3001.png"""")
-          responseBody should include("""data-image-brickset="/part_images/brickset/3001""")
-          responseBody.split("data-image-ldraw").length - 1 should be(1)
-        }
+      Post("/parts-sorter", csvUpload) ~> attributeRoute ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
+        responseBody should include("""<img src="https://example.com/taxonomy.png"""")
+        responseBody should include("""<img alt="" style="max-width: 100px" data-image-ldraw="/part_images/2/3001.png"""")
+        responseBody should include("""data-image-brickset="/part_images/brickset/3001""")
+        responseBody.split("data-image-ldraw").length - 1 should be(1)
+        responseBody.split("""<td data-col-id="image"></td>""").length - 1 should be(1)
+      }
     }
 
     "handle .io file upload and include part names from model2.ldr" in {
@@ -328,14 +345,26 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
 
-    "serve parts-sorter.js file with the lazy image loader" in {
+    "serve parts-sorter.js file delegating lazy images to the loader module" in {
       Get("/parts-sorter.js") ~> route ~> check {
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
         responseBody should include("handleDragStart")
         responseBody should include("showDropIndicator")
         responseBody should include("resetColumnOrder")
+        responseBody should include("partsSorterImages.loadLazyImages()")
+        responseBody should not include("function loadLazyImages")
+      }
+    }
+
+    "serve partsSorterImages.js file with the lazy image loader" in {
+      Get("/partsSorterImages.js") ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
         responseBody should include("loadLazyImages")
+        responseBody should include("loadImage")
+        responseBody should include("retryAfterMs")
+        responseBody should include("opaqueredirect")
       }
     }
   }

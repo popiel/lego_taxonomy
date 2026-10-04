@@ -12,7 +12,7 @@
     function init() {
         initDesktopDragDrop();
         initTouchDragDrop();
-        loadLazyImages();
+        window.partsSorterImages.loadLazyImages();
         document.getElementById('resetColumnsBtn')?.addEventListener('click', resetColumnOrder);
 
         document.getElementById('inputFile').addEventListener('change', function() {
@@ -300,66 +300,6 @@
     function resetColumnOrder() {
         currentOrder = window.columnOrder.resetColumns();
         reorderTable();
-    }
-
-    function loadLazyImages() {
-        document.querySelectorAll('img[data-image-ldraw]').forEach(img => {
-            loadImage(img);
-        });
-    }
-
-    async function loadImage(img) {
-        const ldrawUrl = img.dataset.imageLdraw;
-        const bricksetUrl = img.dataset.imageBrickset;
-        const cell = img.closest('td');
-        const deadline = Date.now() + 30000;
-
-        try {
-            let response = await fetch(ldrawUrl);
-            while (response.status === 503 && Date.now() < deadline) {
-                await sleep(retryAfterMs(response));
-                response = await fetch(ldrawUrl);
-            }
-            if (response.ok) {
-                img.src = URL.createObjectURL(await response.blob());
-                return;
-            }
-            if (response.status !== 404 || !bricksetUrl) {
-                hideImageCell(cell);
-                return;
-            }
-
-            response = await fetch(bricksetUrl, { redirect: 'manual' });
-            while (response.status === 503 && Date.now() < deadline) {
-                await sleep(retryAfterMs(response));
-                response = await fetch(bricksetUrl, { redirect: 'manual' });
-            }
-            if (response.type === 'opaqueredirect') {
-                img.src = bricksetUrl;
-                return;
-            }
-            if (response.ok) {
-                img.src = URL.createObjectURL(await response.blob());
-                return;
-            }
-            hideImageCell(cell);
-        } catch (err) {
-            hideImageCell(cell);
-        }
-    }
-
-    function retryAfterMs(response) {
-        const seconds = parseInt(response.headers.get('Retry-After'), 10);
-        if (isNaN(seconds)) return 2000;
-        return Math.min(seconds * 1000, 5000);
-    }
-
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    function hideImageCell(cell) {
-        if (cell) cell.style.visibility = 'hidden';
     }
 
     window.resetColumnOrder = resetColumnOrder;

@@ -229,6 +229,11 @@ object Routes {
         }
       },
       get {
+        path("partsSorterImages.js") {
+          getFromResource("partsSorterImages.js")
+        }
+      },
+      get {
         path("columnOrder.js") {
           getFromResource("columnOrder.js")
         }
@@ -395,19 +400,24 @@ object Routes {
                         val legoPart = mp.legoPart
                         val imageWidth = legoPart.flatMap(_.imageWidth)
                         val imageHeight = legoPart.flatMap(_.imageHeight)
-                        val imageHtml = legoPart.flatMap(_.imageUrl) match {
-                          case Some(url) =>
-                            (imageWidth, imageHeight) match {
-                              case (Some(w), Some(h)) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" height="${escapeHtml(h)}" />"""
-                              case (Some(w), None) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" />"""
-                              case (None, Some(h)) => s"""<img src="${escapeHtml(url)}" height="${escapeHtml(h)}" />"""
-                              case _ => s"""<img src="${escapeHtml(url)}" style="max-width: ${maxTaxonomyWidth}px" />"""
+                        val imageHtml = mp.legoPart match {
+                          case Some(part) =>
+                            part.imageUrl match {
+                              case Some(url) =>
+                                (imageWidth, imageHeight) match {
+                                  case (Some(w), Some(h)) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" height="${escapeHtml(h)}" />"""
+                                  case (Some(w), None) => s"""<img src="${escapeHtml(url)}" width="${escapeHtml(w)}" />"""
+                                  case (None, Some(h)) => s"""<img src="${escapeHtml(url)}" height="${escapeHtml(h)}" />"""
+                                  case _ => s"""<img src="${escapeHtml(url)}" style="max-width: ${maxTaxonomyWidth}px" />"""
+                                }
+                              case None =>
+                                resolveColorId(mp.coloredPart.color, colorNameToId).map { colorId =>
+                                  val elementQuery = mp.coloredPart.elementId.fold("")(id => s"?element=${urlEncode(id)}")
+                                  s"""<img alt="" style="max-width: ${maxTaxonomyWidth}px" data-image-ldraw="/part_images/$colorId/${escapeHtml(mp.coloredPart.partNumber)}.png" data-image-brickset="/part_images/brickset/${escapeHtml(mp.coloredPart.partNumber)}$elementQuery" />"""
+                                }.getOrElse("")
                             }
                           case None =>
-                            resolveColorId(mp.coloredPart.color, colorNameToId).map { colorId =>
-                              val elementQuery = mp.coloredPart.elementId.fold("")(id => s"?element=${urlEncode(id)}")
-                              s"""<img alt="" style="max-width: ${maxTaxonomyWidth}px" data-image-ldraw="/part_images/$colorId/${escapeHtml(mp.coloredPart.partNumber)}.png" data-image-brickset="/part_images/brickset/${escapeHtml(mp.coloredPart.partNumber)}$elementQuery" />"""
-                            }.getOrElse("")
+                            ""
                         }
                         s"""<tr>
                             <td data-col-id="category">${escapeHtml(catNames.headOption.getOrElse(""))}$guessedMarker</td>
@@ -427,6 +437,7 @@ object Routes {
     </div>
 
     <script src=${HttpServer.cacheBustJsPath("columnOrder.js")}></script>
+    <script src=${HttpServer.cacheBustJsPath("partsSorterImages.js")}></script>
     <script src=${HttpServer.cacheBustJsPath("parts-sorter.js")}></script>
 </body>
 </html>"""
