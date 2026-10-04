@@ -56,7 +56,13 @@ case class TaxonomyData(
       val baseNumber = itemNumber.takeWhile(_.isDigit)
       if (baseNumber.nonEmpty && baseNumber != itemNumber) {
         findPart(baseNumber).map { part =>
-          part.copy(partNumber = itemNumber, name = s"${part.name} (modified)")
+          part.copy(
+            partNumber = itemNumber,
+            name = s"${part.name} (modified)",
+            imageUrl = None,
+            imageWidth = None,
+            imageHeight = None
+          )
         }
       } else {
         None

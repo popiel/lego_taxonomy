@@ -2,6 +2,7 @@ package com.wolfskeep
 
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.Behavior
 import akka.actor.typed.Props
 import akka.actor.typed.SpawnProtocol
 import akka.actor.typed.scaladsl.AskPattern._
@@ -11,63 +12,120 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.matchers.should.Matchers
-import com.wolfskeep.rebrickable.{Data, RebrickableHolder}
+import com.wolfskeep.rebrickable.{Color, Data, RebrickableHolder}
 
 import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.Await
 
 class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTest {
-  
+
   implicit val timeout: Timeout = 3.seconds
-  
+
   val typedSystem: ActorSystem[SpawnProtocol.Command] = ActorSystem(SpawnProtocol(), "test")
   implicit val scheduler: akka.actor.typed.Scheduler = typedSystem.scheduler
-  
-  val partsProcessor: ActorRef[PartsProcessor.Command] = Await.result(
-    typedSystem.ask[ActorRef[PartsProcessor.Command]](replyTo => SpawnProtocol.Spawn(
-      behavior = Behaviors.receiveMessage[PartsProcessor.Command] {
+
+  private val PngBytes: Array[Byte] = Array[Byte](1, 2, 3)
+  private val BricksetImageUrl = "https://example.com/3001.jpg"
+
+  val testData: Data = Data(
+    colors = List(
+      Color(1, "Blue", "0000ff", false, 0, 0, 0, 0),
+      Color(2, "Red", "ff0000", false, 0, 0, 0, 0)
+    ),
+    parts = Nil,
+    elements = Nil,
+    sets = Nil,
+    inventories = Nil,
+    inventoryParts = Nil
+  )
+
+  def spawnActor[T](behavior: Behavior[T], name: String): ActorRef[T] =
+    Await.result(
+      typedSystem.ask[ActorRef[T]](replyTo => SpawnProtocol.Spawn(
+        behavior = behavior,
+        name = name,
+        props = Props.empty,
+        replyTo = replyTo
+      )),
+      3.seconds
+    )
+
+  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] = spawnActor(
+    Behaviors.receiveMessage[RebrickableHolder.Command] {
+      case RebrickableHolder.GetData(replyTo) =>
+        replyTo ! testData
+        Behaviors.same
+      case _ =>
+        Behaviors.same
+    },
+    "rebrickableDataActor"
+  )
+
+  def fakeProcessor(legoPartFor: ColoredPart => Option[LegoPart]): ActorRef[PartsProcessor.Command] =
+    spawnActor(
+      Behaviors.receiveMessage[PartsProcessor.Command] {
         case PartsProcessor.ProcessParts(coloredParts, replyTo) =>
-          val matchedParts = coloredParts.map { cp =>
-            MatchedPart(cp, None)
-          }
-          replyTo ! PartsProcessor.ProcessedParts(matchedParts)
+          replyTo ! PartsProcessor.ProcessedParts(coloredParts.map(cp => MatchedPart(cp, legoPartFor(cp))))
           Behaviors.same
       },
-      name = "partsProcessor",
-      props = Props.empty,
-      replyTo = replyTo
-    )),
-    3.seconds
-  )
+      s"partsProcessor-${java.util.UUID.randomUUID()}"
+    )
 
-  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] = Await.result(
-    typedSystem.ask[ActorRef[RebrickableHolder.Command]](replyTo => SpawnProtocol.Spawn(
-      behavior = Behaviors.receiveMessage[RebrickableHolder.Command] {
-        case RebrickableHolder.GetData(replyTo) =>
-          replyTo ! Data(Nil, Nil, Nil, Nil, Nil, Nil)
+  val echoProcessor: ActorRef[PartsProcessor.Command] = fakeProcessor(_ => None)
+
+  def fakeImageResolver(
+    ldrawAnswer: ImageResolver.LdrawImageResponse = ImageResolver.LdrawImageReady(PngBytes),
+    bricksetAnswer: ImageResolver.BricksetImageResponse =
+      ImageResolver.BricksetImageResolved(BricksetImageUrl)
+  ): ActorRef[ImageResolver.Command] =
+    spawnActor(
+      Behaviors.receiveMessage[ImageResolver.Command] {
+        case ImageResolver.GetLdrawImage(_, _, replyTo) =>
+          replyTo ! ldrawAnswer
           Behaviors.same
-        case _ =>
+        case ImageResolver.GetBricksetImageUrl(_, _, replyTo) =>
+          replyTo ! bricksetAnswer
           Behaviors.same
       },
-      name = "rebrickableDataActor",
-      props = Props.empty,
-      replyTo = replyTo
-    )),
-    3.seconds
+      s"imageResolver-${java.util.UUID.randomUUID()}"
+    )
+
+  val tinyTimeouts: Timeouts.Web = Timeouts.Web(
+    httpServerRequestTimeout = 2.seconds,
+    routeRequest = 1.second,
+    dataAsk = 400.millis,
+    processAsk = 600.millis,
+    imageWait = 500.millis,
+    imageRetryAfter = 50.millis,
+    imageNegativeTtl = 24.hours
   )
 
-  val route: Route = Routes.all(typedSystem, partsProcessor, rebrickableDataActor)
+  val route: Route = Routes.all(typedSystem, echoProcessor, rebrickableDataActor, fakeImageResolver())
+
+  private val csvContent = """BLItemNo,ElementId,LdrawId,PartName,BLColorId,LDrawColorId,ColorName,ColorCategory,Qty,Weight
+3001,300123,3001.dat,Brick 2 x 4,7,1,Blue,Solid colors,2,2.32
+3001,300121,3001.dat,Brick 2 x 4,5,4,Red,Solid colors,1,2.32
+"""
+
+  private def csvUpload: Multipart.FormData =
+    Multipart.FormData(
+      Multipart.FormData.BodyPart(
+        "inputFile",
+        HttpEntity(ContentTypes.`text/csv(UTF-8)`, csvContent),
+        Map("filename" -> "test.csv")
+      )
+    )
 
   "HttpServer routes" must {
-    
+
     "redirect root to parts-sorter" in {
       Get("/") ~> route ~> check {
         status should ===(StatusCodes.Found)
         header("Location").map(_.value) should ===(Some("/parts-sorter"))
       }
     }
-    
+
     "serve parts-sorter with description and form" in {
       Get("/parts-sorter") ~> route ~> check {
         status should ===(StatusCodes.OK)
@@ -81,22 +139,9 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("""<form method="POST" action="/parts-sorter" enctype="multipart/form-data" id="uploadForm">""")
       }
     }
-    
+
     "handle CSV upload and display results with file name" in {
-      val csvContent = """BLItemNo,ElementId,LdrawId,PartName,BLColorId,LDrawColorId,ColorName,ColorCategory,Qty,Weight
-3001,300123,3001.dat,Brick 2 x 4,7,1,Blue,Solid Colors,2,2.32
-3001,300121,3001.dat,Brick 2 x 4,5,4,Red,Solid Colors,1,2.32
-"""
-      
-      val formData = Multipart.FormData(
-        Multipart.FormData.BodyPart(
-          "inputFile",
-          HttpEntity(ContentTypes.`text/csv(UTF-8)`, csvContent),
-          Map("filename" -> "test.csv")
-        )
-      )
-      
-      Post("/parts-sorter", formData) ~> route ~> check {
+      Post("/parts-sorter", csvUpload) ~> route ~> check {
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
         val responseBody = entityAs[String]
@@ -111,7 +156,35 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("resetColumnOrder()")
       }
     }
-    
+
+    "render taxonomy images inline and lazy attributes for parts without one" in {
+      val processor = fakeProcessor { cp =>
+        if (cp.color == "Blue") {
+          Some(LegoPart(
+            partNumber = cp.partNumber,
+            name = cp.name,
+            categories = List(Category("1", "Bricks", None)),
+            sequenceNumber = 0,
+            altNumbers = Set.empty,
+            imageUrl = Some("https://example.com/taxonomy.png"),
+            imageWidth = None,
+            imageHeight = None
+          ))
+        } else None
+      }
+      val attributeRoute: Route =
+        Routes.all(typedSystem, processor, rebrickableDataActor, fakeImageResolver())
+
+        Post("/parts-sorter", csvUpload) ~> attributeRoute ~> check {
+          status should ===(StatusCodes.OK)
+          val responseBody = entityAs[String]
+          responseBody should include("""<img src="https://example.com/taxonomy.png"""")
+          responseBody should include("""<img alt="" style="max-width: 100px" data-image-ldraw="/part_images/2/3001.png"""")
+          responseBody should include("""data-image-brickset="/part_images/brickset/3001""")
+          responseBody.split("data-image-ldraw").length - 1 should be(1)
+        }
+    }
+
     "handle .io file upload and include part names from model2.ldr" in {
       val ioFile = new java.io.File("src/test/resources/simple.io")
       val ioBytes = {
@@ -121,7 +194,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         fis.close()
         bytes
       }
-      
+
       val formData = Multipart.FormData(
         Multipart.FormData.BodyPart(
           "inputFile",
@@ -129,7 +202,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
           Map("filename" -> "simple.io")
         )
       )
-      
+
       Post("/parts-sorter", formData) ~> route ~> check {
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
@@ -140,10 +213,98 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         responseBody should include("Brick 1 x 4")
       }
     }
-    
+
     "handle request without file part" in {
       Post("/parts-sorter") ~> route ~> check {
         handled shouldBe false
+      }
+    }
+
+    "recover with an error page when the set number is not found" in {
+      Post("/parts-sorter", FormData("setNumber" -> "999-1")) ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
+        responseBody should include("No set found for 999-1")
+        responseBody should include("class=\"error-message\"")
+      }
+    }
+
+    "return a friendly 503 page when the processor exceeds the budget" in {
+      val silentProcessor = spawnActor(Behaviors.ignore[PartsProcessor.Command], "silent-processor")
+      val tinyRoute: Route =
+        Routes.all(typedSystem, silentProcessor, rebrickableDataActor, fakeImageResolver(), tinyTimeouts)
+
+      Post("/parts-sorter", csvUpload) ~> tinyRoute ~> check {
+        status should ===(StatusCodes.ServiceUnavailable)
+        val responseBody = entityAs[String]
+        responseBody should include("still processing")
+        responseBody should include("class=\"error-message\"")
+      }
+    }
+
+    "serve an LDraw image" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(ldrawAnswer = ImageResolver.LdrawImageReady(PngBytes)))
+
+      Get("/part_images/1/3001.png") ~> imageRoute ~> check {
+        status should ===(StatusCodes.OK)
+        contentType.mediaType should ===(MediaTypes.`image/png`)
+      }
+    }
+
+    "return 404 for an LDraw image that is known unavailable" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(ldrawAnswer = ImageResolver.LdrawImageUnavailable))
+
+      Get("/part_images/1/3001.png") ~> imageRoute ~> check {
+        status should ===(StatusCodes.NotFound)
+      }
+    }
+
+    "return 503 with Retry-After while an LDraw image is pending" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(ldrawAnswer = ImageResolver.LdrawImagePending),
+        tinyTimeouts)
+
+      Get("/part_images/1/3001.png") ~> imageRoute ~> check {
+        status should ===(StatusCodes.ServiceUnavailable)
+        header("Retry-After").map(_.value) should ===(Some("0"))
+      }
+    }
+
+    "redirect to a resolved Brickset image" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(bricksetAnswer = ImageResolver.BricksetImageResolved(BricksetImageUrl)))
+
+      Get("/part_images/brickset/3001?element=6331694") ~> imageRoute ~> check {
+        status should ===(StatusCodes.Found)
+        header("Location").map(_.value) should ===(Some(BricksetImageUrl))
+      }
+    }
+
+    "return 404 for a Brickset image that is known unavailable" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(bricksetAnswer = ImageResolver.BricksetImageUnavailable))
+
+      Get("/part_images/brickset/3001") ~> imageRoute ~> check {
+        status should ===(StatusCodes.NotFound)
+      }
+    }
+
+    "return 503 with Retry-After while a Brickset image is pending" in {
+      val imageRoute: Route = Routes.all(
+        typedSystem, echoProcessor, rebrickableDataActor,
+        fakeImageResolver(bricksetAnswer = ImageResolver.BricksetImagePending),
+        tinyTimeouts)
+
+      Get("/part_images/brickset/3001") ~> imageRoute ~> check {
+        status should ===(StatusCodes.ServiceUnavailable)
+        header("Retry-After").map(_.value) should ===(Some("0"))
       }
     }
 
@@ -167,13 +328,14 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
 
-    "serve parts-sorter.js file" in {
+    "serve parts-sorter.js file with the lazy image loader" in {
       Get("/parts-sorter.js") ~> route ~> check {
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
         responseBody should include("handleDragStart")
         responseBody should include("showDropIndicator")
         responseBody should include("resetColumnOrder")
+        responseBody should include("loadLazyImages")
       }
     }
   }

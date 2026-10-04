@@ -15,6 +15,9 @@ import scala.concurrent.duration.{FiniteDuration, DurationInt}
 trait LDrawImageFetcherTrait {
   def ensureDownloaded(colorId: Int)(implicit ec: ExecutionContext): Boolean
   def hasImageInZip(colorId: Int, partNumber: String): Boolean
+  def getImageFromZip(colorId: Int, partNumber: String): Option[Array[Byte]]
+  def isZipAvailable(colorId: Int): Boolean
+  def canRetryDownload(colorId: Int): Boolean
 }
 
 class LDrawImageFetcher(implicit val system: ActorSystem[_]) extends LDrawImageFetcherTrait {
@@ -81,6 +84,12 @@ class LDrawImageFetcher(implicit val system: ActorSystem[_]) extends LDrawImageF
     }
   }
 
+  def isZipAvailable(colorId: Int): Boolean =
+    RebrickableBinaryCache.isLDrawFresh(colorId)
+
+  def canRetryDownload(colorId: Int): Boolean =
+    RebrickableBinaryCache.canRetry(s"parts_$colorId.zip")
+
   def getImageFromZip(colorId: Int, partNumber: String): Option[Array[Byte]] = {
     val zipPath = RebrickableBinaryCache.getLDrawCachePath(colorId)
     if (!java.nio.file.Files.exists(zipPath)) {
@@ -96,8 +105,7 @@ class LDrawImageFetcher(implicit val system: ActorSystem[_]) extends LDrawImageF
       } else {
         val stream = zipFile.getInputStream(entry)
         try {
-          val bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(entry.getName))
-          Some(bytes)
+          Some(stream.readAllBytes())
         } catch {
           case _: Exception => None
         } finally {

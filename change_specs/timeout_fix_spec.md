@@ -1,6 +1,46 @@
 # Web Request Timeout Fix Specification
 
-Status: approved. TDD: tests first, mainline code to green.
+Status: implemented (194 tests green). TDD: tests first, mainline code to
+green. Implementation notes beyond the plan:
+
+- `waitForImage` (route-side bounded poll) recovers from resolver-ask
+  failures by treating them as "give up for now": the route answers
+  `503` + `Retry-After`, and the client's bounded retry loop takes over.
+- The client's Brickset probe uses `fetch(url, { redirect: 'manual' })`:
+  an `opaqueredirect` response type unambiguously means the endpoint
+  answered `302` (resolved), so the image is then displayed by setting
+  `img.src` directly — which follows the redirect without CORS limits.
+- The LDraw zip bytes are read from the zip stream
+  (`stream.readAllBytes()`); the previous `getImageFromZip` read the
+  entry name from the filesystem instead, so the `/part_images` route
+  could never serve a real image. Fixed with the lazy-image work.
+- `getImageFromZip`/`isZipAvailable`/`canRetryDownload` joined the
+  `LDrawImageFetcherTrait` seam so the resolver is testable.
+- Negative-marker expiry is a read-time TTL, not a background sweep: the
+  original claim that DiskCache entries "expire with the existing 22.5h
+  staleness threshold" was wrong (that threshold lives inside
+  `CachedDownloader`'s page-cache flow, which the resolver bypasses). The
+  resolver now treats a negative marker older than `image-negative-ttl` as
+  absent, so an unresolvable part is retried at most once per TTL window —
+  no scheduled re-check needed, since the retry is on demand and its page
+  fetch is disk-cached.
+- Regression fix (found in production use): `TaxonomyData.findBasePart`'s
+  synthesized "(modified)" identity copied the base part's
+  `imageUrl`/`imageWidth`/`imageHeight`, so printed parts (e.g.
+  `98138pr0035`) rendered the base unprinted part's taxonomy image inline
+  and never fell through to the lazy chain. The old eager path masked this
+  by overwriting `imageUrl` for every Modified result; the lazy renderer's
+  taxonomy fast path exposed it. The synthesis now clears the image fields,
+  so Modified identities resolve their own image via LDraw
+  (`part_images/<colorId>/<full partNumber>.png`) then Brickset (element
+  query first, part-number fallback) — exactly the old resolution order.
+- Regression fix (found in production use): the old render attached
+  resolved images with no explicit dimensions, so they were bounded by the
+  shared `max-width: ${maxTaxonomyWidth}px` rule (default 100px). The lazy
+  `<img>` was rendered with no size bound, so images loaded by the client
+  rendered at natural size and warped the table columns. The lazy element
+  now carries the same `style="max-width: ${maxTaxonomyWidth}px"` — the
+  bound is baked in at render time and survives the JS `src` assignment.
 
 ## Goals
 
@@ -63,6 +103,7 @@ lego-taxonomy.web.data-ask         = 10s   # GetData step
 lego-taxonomy.web.process-ask      = 20s   # ProcessParts step (10 + 20 = 30)
 lego-taxonomy.web.image-wait       = 10s   # how long an image request waits on in-flight work
 lego-taxonomy.web.image-retry-after = 2s   # Retry-After sent with 503
+lego-taxonomy.web.image-negative-ttl = 24h # Brickset negative-marker expiry
 ```
 
 ## Requirements
@@ -78,8 +119,10 @@ lego-taxonomy.web.image-retry-after = 2s   # Retry-After sent with 503
   redirect endpoint — and "pending" is distinguishable from
   "known unavailable" both in protocol and over HTTP.
 - R5: negative results (a part Brickset cannot resolve) are durably cached
-  so page loads do not refetch them; entries expire with the existing
-  staleness threshold.
+  so page loads do not refetch them; a negative marker expires after
+  `image-negative-ttl` (default 24h), checked at read time, so a part
+  Brickset adds later is re-resolved on the first request after the TTL
+  lapses — at most one resolve attempt per part per TTL window.
 - R6: single-flight: N concurrent requests for the same color zip or the
   same part's Brickset resolve cause exactly one download.
 - R7: parts with a taxonomy image (parsed from brickarchitect HTML,
@@ -124,9 +167,19 @@ Owns per-color and per-part image state, single-flight in each:
 - **Pending is a wait, not an error:** the route holds the image request up
   to `image-wait` (10s) for in-flight work. Image requests are not the page
   request, so waiting is invisible to the user.
-- **Negative caching is durable for Brickset:** positive
-  `brickset-image/<pn>` and negative `brickset-image-missing/<pn>` entries in
-  `DiskCache`; the existing 22.5h staleness threshold gives natural expiry.
+- **Negative caching is durable for Brickset, with read-time expiry:**
+  positive `brickset-image/<pn>` and negative `brickset-image-missing/<pn>`
+  entries in `DiskCache`. The resolver compares the entry's `insertedAt`
+  against `image-negative-ttl` (default 24h): a lapsed negative marker is
+  treated as absent and the part is re-resolved on the next request. The
+  re-fetch is cheap — the Brickset page itself goes back through
+  `CachedDownloader`'s 22.5h cache. Positive markers are permanent: Brickset
+  CDN image URLs are stable, so resolved parts are not re-fetched.
+- **LDraw has no cross-day negative state:** every request re-checks the
+  part against the current zip, zips carry a 22.5h freshness window, the
+  3am scheduler re-downloads every color's zip, and per-zip retry counters
+  reset daily — so new LDraw data appears within a day without any
+  resolver-side expiry logic.
 - **LDraw negative state reuses what exists:**
   `RebrickableBinaryCache.canRetry` / `recordRetry` already track per-zip
   retry exhaustion; no new durable state is needed for zips.

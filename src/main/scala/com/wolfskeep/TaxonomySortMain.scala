@@ -38,7 +38,10 @@ object TaxonomySortMain {
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
 
     val ldrawImageFetcher = new LDrawImageFetcher()(system)
-    val partsProcessor = system.systemActorOf(PartsProcessor(taxonomyDataHolder, downloader, rebrickableData, ldrawImageFetcher), "parts-processor")
+    val imageResolver = system.systemActorOf(
+      ImageResolver(ldrawImageFetcher, downloader, cache), "image-resolver")
+    val partsProcessor = system.systemActorOf(
+      PartsProcessor(taxonomyDataHolder), "parts-processor")
 
     val taxonomyScheduler = system.systemActorOf(TaxonomyScheduler(system, taxonomyDataHolder), "taxonomy-scheduler")
     taxonomyScheduler ! TaxonomyScheduler.FetchTaxonomy
@@ -51,7 +54,7 @@ object TaxonomySortMain {
     import akka.stream.Materializer
     implicit val materializer: Materializer = Materializer(system)
 
-    val bindingFuture = HttpServer.start(partsProcessor, rebrickableData, system)
+    val bindingFuture = HttpServer.start(partsProcessor, rebrickableData, imageResolver, system)
 
     Await.result(system.whenTerminated, Duration.Inf)
     System.exit(0)
