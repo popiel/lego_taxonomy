@@ -12,7 +12,16 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.matchers.should.Matchers
-import com.wolfskeep.rebrickable.{Color, Data, RebrickableHolder}
+import com.wolfskeep.rebrickable.{
+  Color,
+  Data,
+  Element,
+  Inventory,
+  InventoryPart,
+  Part,
+  RebrickableHolder,
+  RebrickableSet
+}
 
 import akka.util.Timeout
 import scala.concurrent.duration._
@@ -33,11 +42,21 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       Color(1, "Blue", "0000ff", false, 0, 0, 0, 0),
       Color(2, "Red", "ff0000", false, 0, 0, 0, 0)
     ),
-    parts = Nil,
-    elements = Nil,
-    sets = Nil,
-    inventories = Nil,
-    inventoryParts = Nil
+    parts = List(
+      Part("3001", "Brick 2 x 4", 1, "Plastic")
+    ),
+    elements = List(
+      Element(6116611L, "3001", 1, Some(3001))
+    ),
+    sets = List(
+      RebrickableSet("21321-1", "Treehouse", 2020, 1, 2, None)
+    ),
+    inventories = List(
+      Inventory(1, 1, "21321-1")
+    ),
+    inventoryParts = List(
+      InventoryPart(1, "3001", 1, 2, false, None)
+    )
   )
 
   def spawnActor[T](behavior: Behavior[T], name: String): ActorRef[T] =
@@ -148,6 +167,8 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
         contentType should ===(ContentTypes.`text/html(UTF-8)`)
         val responseBody = entityAs[String]
         responseBody should include("Uploaded file: test.csv")
+        responseBody should include("Last uploaded: test.csv")
+        responseBody should include("""placeholder="e.g., 21321-1">""")
         responseBody should include("<table>")
         responseBody should include("<th draggable=\"true\" data-col-type=\"category\" data-col-id=\"category\">category</th>")
         responseBody should include("<th draggable=\"true\" data-col-type=\"normal\" data-col-id=\"partNumber\">partNumber</th>")
@@ -237,12 +258,41 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       }
     }
 
-    "recover with an error page when the set number is not found" in {
-      Post("/parts-sorter", FormData("setNumber" -> "999-1")) ~> route ~> check {
+    "redirect a submitted set number to its bookmarkable URL" in {
+      Post("/parts-sorter", FormData("setNumber" -> "21321-1")) ~> route ~> check {
+        status should ===(StatusCodes.SeeOther)
+        header("Location").map(_.value) should ===(Some("/parts-sorter?setNumber=21321-1"))
+      }
+    }
+
+    "look up a set number from the URL and pre-fill the form with it" in {
+      Get("/parts-sorter?setNumber=21321-1") ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
+        responseBody should include("21321-1: Treehouse")
+        responseBody should include("""value="21321-1"""")
+        responseBody should include("<table>")
+        responseBody should include("<td data-col-id=\"partNumber\">3001</td>")
+        responseBody should not include("No set found")
+      }
+    }
+
+    "look up an unknown set number from the URL, keep it in the form, and show the error page" in {
+      Get("/parts-sorter?setNumber=999-1") ~> route ~> check {
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
         responseBody should include("No set found for 999-1")
         responseBody should include("class=\"error-message\"")
+        responseBody should include("""value="999-1"""")
+      }
+    }
+
+    "render the default page for an empty set number parameter" in {
+      Get("/parts-sorter?setNumber=") ~> route ~> check {
+        status should ===(StatusCodes.OK)
+        val responseBody = entityAs[String]
+        responseBody should include("Enter a LEGO Set Number")
+        responseBody should include("""placeholder="e.g., 21321-1">""")
       }
     }
 

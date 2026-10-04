@@ -91,21 +91,43 @@ object Routes {
       loop()
     }
 
-    def errorPage(status: StatusCode, message: String): StandardRoute =
+    def errorPage(status: StatusCode, message: String, prefillSetNumber: Option[String] = None): StandardRoute =
       complete((status, HttpEntity(ContentTypes.`text/html(UTF-8)`,
-        partsSorterHtml(Nil, Some(message), Map.empty))))
+        partsSorterHtml(Nil, Some(message), Map.empty, prefillSetNumber = prefillSetNumber))))
 
-    def failureResponse(ex: Throwable): StandardRoute = ex match {
+    def failureResponse(ex: Throwable, prefillSetNumber: Option[String] = None): StandardRoute = ex match {
       case _: java.util.concurrent.TimeoutException | _: akka.pattern.AskTimeoutException =>
-        errorPage(StatusCodes.ServiceUnavailable, HttpServer.StillProcessingMessage)
+        errorPage(StatusCodes.ServiceUnavailable, HttpServer.StillProcessingMessage, prefillSetNumber)
       case _ =>
-        errorPage(StatusCodes.InternalServerError, HttpServer.ProcessingFailedMessage)
+        errorPage(StatusCodes.InternalServerError, HttpServer.ProcessingFailedMessage, prefillSetNumber)
     }
 
-    val retryAfterImageResponse: Route =
-      respondWithHeader(RawHeader("Retry-After", timeouts.imageRetryAfter.toSeconds.toString)) {
-        complete(StatusCodes.ServiceUnavailable)
+    def setNumberUrl(setNumber: String): Uri =
+      Uri("/parts-sorter").withQuery(Uri.Query("setNumber" -> setNumber))
+
+    def processSetRequest(setNumber: String): Future[(List[MatchedPart], String, Map[String, Int])] =
+      getSetInventory(rebrickableDataActor, setNumber, timeouts.dataAsk)
+        .recover { case ex: NoSuchElementException =>
+          (List.empty[ColoredPart], ex.getMessage, Map.empty[String, Int])
+        }
+        .flatMap { case (coloredParts, setInfo, colorNameToId) =>
+          if (coloredParts.isEmpty) {
+            Future.successful((List.empty[MatchedPart], setInfo, colorNameToId))
+          } else {
+            processParts(coloredParts, partsProcessor, setInfo, colorNameToId, timeouts.processAsk)
+          }
+        }
+
+    val setResultsRoute: String => Route = setNumber => {
+      val result = processSetRequest(setNumber)
+      onComplete(result) {
+        case scala.util.Success((results, setInfo, colorNameToId)) =>
+          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
+            partsSorterHtml(results, Some(setInfo), colorNameToId, prefillSetNumber = Some(setNumber))))
+        case scala.util.Failure(ex) =>
+          failureResponse(ex, prefillSetNumber = Some(setNumber))
       }
+    }
 
     val postRoute: Route = post {
       path("parts-sorter") {
@@ -113,25 +135,7 @@ object Routes {
           formField("setNumber".as[String].?) { setNumberOpt =>
             setNumberOpt match {
               case Some(setNumber) if setNumber.trim.nonEmpty =>
-                val result = getSetInventory(rebrickableDataActor, setNumber, timeouts.dataAsk)
-                  .recover { case ex: NoSuchElementException =>
-                    (List.empty[ColoredPart], ex.getMessage, Map.empty[String, Int])
-                  }
-                  .flatMap { case (coloredParts, setInfo, colorNameToId) =>
-                    if (coloredParts.isEmpty) {
-                      Future.successful((List.empty[MatchedPart], setInfo, colorNameToId))
-                    } else {
-                      processParts(coloredParts, partsProcessor, setInfo, colorNameToId, timeouts.processAsk)
-                    }
-                  }
-
-                onComplete(result) {
-                  case scala.util.Success((results, setInfo, colorNameToId)) =>
-                    complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
-                      partsSorterHtml(results, Some(setInfo), colorNameToId)))
-                  case scala.util.Failure(ex) =>
-                    failureResponse(ex)
-                }
+                redirect(setNumberUrl(setNumber.trim), StatusCodes.SeeOther)
 
               case _ =>
                 fileUpload("inputFile") { case (fileInfo, byteSource) =>
@@ -158,7 +162,8 @@ object Routes {
                   onComplete(processedParts) {
                     case scala.util.Success((results, colorNameToId)) =>
                       complete(HttpEntity(ContentTypes.`text/html(UTF-8)`,
-                        partsSorterHtml(results, Some(s"Uploaded file: ${fileInfo.fileName}"), colorNameToId)))
+                        partsSorterHtml(results, Some(s"Uploaded file: ${fileInfo.fileName}"), colorNameToId,
+                          uploadedFileName = Some(fileInfo.fileName))))
                     case scala.util.Failure(ex) =>
                       failureResponse(ex)
                   }
@@ -169,13 +174,29 @@ object Routes {
       }
     }
 
+    val getPartsSorterRoute: Route = get {
+      path("parts-sorter") {
+        withRequestTimeout(timeouts.httpServerRequestTimeout) {
+          parameter("setNumber".as[String].?) { setNumberOpt =>
+            setNumberOpt match {
+              case Some(setNumber) if setNumber.trim.nonEmpty =>
+                setResultsRoute(setNumber.trim)
+              case _ =>
+                complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, partsSorterHtml(Nil, None, Map.empty)))
+            }
+          }
+        }
+      }
+    }
+
+    val retryAfterImageResponse: Route =
+      respondWithHeader(RawHeader("Retry-After", timeouts.imageRetryAfter.toSeconds.toString)) {
+        complete(StatusCodes.ServiceUnavailable)
+      }
+
     concat(
       pathSingleSlash(redirect("/parts-sorter", StatusCodes.Found)),
-      get {
-        path("parts-sorter") {
-          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, partsSorterHtml(Nil, None, Map.empty)))
-        }
-      },
+      getPartsSorterRoute,
       postRoute,
       get {
         path("part_images" / "brickset" / Segment) { partNumber =>
@@ -333,7 +354,9 @@ object Routes {
   def partsSorterHtml(
     results: List[MatchedPart],
     sourceMessage: Option[String],
-    colorNameToId: Map[String, Int] = Map.empty
+    colorNameToId: Map[String, Int] = Map.empty,
+    prefillSetNumber: Option[String] = None,
+    uploadedFileName: Option[String] = None
   ): String = {
     s"""<!DOCTYPE html>
 <html lang="en">
@@ -354,11 +377,12 @@ object Routes {
         <form method="POST" action="/parts-sorter" enctype="multipart/form-data" id="uploadForm">
             <div style="margin-bottom: 15px;">
                 <label for="setNumber">LEGO Set Number:</label><br>
-                <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1">
+                <input type="text" name="setNumber" id="setNumber" placeholder="e.g., 21321-1"${prefillSetNumber.fold("")(sn => s""" value="${escapeHtml(sn)}"""")}>
             </div>
             <div>
                 <label for="inputFile">Or upload file (.csv or .io):</label><br>
                 <input type="file" name="inputFile" id="inputFile" accept=".csv,.io"><br>
+                ${uploadedFileName.fold("")(name => s"""<span class="uploaded-file-name">Last uploaded: ${escapeHtml(name)}</span><br>""")}
                 Supported formats include Studio model file, Studio model summary export, BrickSet inventory, Rebrickable inventory, or LEGO Pick-A-Brick csv.
             </div>
         </form>

@@ -122,8 +122,15 @@ class RenderingGoldenSpec extends AnyWordSpecLike with Matchers with ScalatestRo
 
   "Rendering through the real TaxonomyHolder-PartsProcessor-Routes chain" must {
 
-    "render the exact image markup per lookup via for set 21321-1" in {
+    "redirect a submitted set number to its bookmarkable URL" in {
       Post("/parts-sorter", FormData("setNumber" -> "21321-1")) ~> route ~> check {
+        status should ===(StatusCodes.SeeOther)
+        header("Location").map(_.value) should ===(Some("/parts-sorter?setNumber=21321-1"))
+      }
+    }
+
+    "render the exact image markup per lookup via for set 21321-1 from its URL" in {
+      Get("/parts-sorter?setNumber=21321-1") ~> route ~> check {
         status should ===(StatusCodes.OK)
         val responseBody = entityAs[String]
 
@@ -138,6 +145,9 @@ class RenderingGoldenSpec extends AnyWordSpecLike with Matchers with ScalatestRo
 
         responseBody should include(
           """<td data-col-id="image"></td>""")
+
+        responseBody should include(
+          """value="21321-1"""")
 
         responseBody.split("<img").length - 1 should be(3)
         responseBody.split("data-image-ldraw").length - 1 should be(1)
