@@ -29,9 +29,10 @@ object TaxonomySortMain {
 
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system", config)
 
-    val taxonomyDataHolder = system.systemActorOf(TaxonomyHolder(), "taxonomy-data-holder")
-
     val rebrickableData = system.systemActorOf(RebrickableHolder(), "rebrickable-data")
+
+    val taxonomyDataHolder = system.systemActorOf(TaxonomyHolder(rebrickableData), "taxonomy-data-holder")
+    system ! TaxonomyFetcher.RegisterHolder(taxonomyDataHolder)
 
     val cache = system.systemActorOf(DiskCache(), "cache")
     val downloader = system.systemActorOf(CachedDownloader(cache), "downloader")
@@ -58,27 +59,25 @@ object TaxonomySortMain {
 
   def runBatchMode(args: Array[String]): Unit = {
     val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
-    val probe = system.systemActorOf(Behaviors.receiveMessage[TaxonomyFetcher.Response] { msg =>
-      msg match {
-        case TaxonomyFetcher.TaxonomyFetched(taxonomyData) =>
-          val catCsv = buildCategoriesCsv(taxonomyData.categories)
-          val partCsv = buildPartsCsv(taxonomyData.parts)
-          writeToFile("categories.csv", catCsv)
-          writeToFile("parts.csv", partCsv)
-          system.log.info("CSVs written to files, now processing inventories")
-          processInventories(taxonomyData, args)
-          system.log.info("Inventories processed, terminating system")
-          system.terminate()
-        case TaxonomyFetcher.Failed(reason) =>
-          system.log.error(s"taxonomy fetch failed: ${reason.getMessage}", reason)
-          system.terminate()
-      }
-      Behaviors.stopped
-    }, "probe")
+    val rebrickableData = system.systemActorOf(RebrickableHolder(), "rebrickable-data")
+    val taxonomyDataHolder = system.systemActorOf(TaxonomyHolder(rebrickableData), "taxonomy-data-holder")
+    system ! TaxonomyFetcher.RegisterHolder(taxonomyDataHolder)
 
-    system ! TaxonomyFetcher.GetTaxonomy(probe)
+    import akka.actor.typed.scaladsl.AskPattern._
+    implicit val timeout: Timeout = Timeout(2.minutes)
+    implicit val scheduler: akka.actor.typed.Scheduler = system.scheduler
 
-    Await.result(system.whenTerminated, Duration("2 minutes"))
+    Await.result(system.ask[TaxonomyFetcher.Response](replyTo => TaxonomyFetcher.GetTaxonomy(replyTo)), Duration("2 minutes")) match {
+      case TaxonomyFetcher.AugmentationComplete =>
+        system.log.info("Taxonomy cycle complete, now processing inventories")
+        processInventories(taxonomyDataHolder, args)
+        system.log.info("Inventories processed, terminating system")
+      case TaxonomyFetcher.Failed(reason) =>
+        system.log.error(s"taxonomy fetch failed: ${reason.getMessage}", reason)
+    }
+
+    system.terminate()
+    Await.result(system.whenTerminated, Duration("30 seconds"))
     System.exit(0)
   }
 
@@ -105,19 +104,18 @@ object TaxonomySortMain {
 
   def escapeCsv(s: String): String = if (s.contains(",") || s.contains("\"") || s.contains("\n")) s"""\"${s.replace("\"", "\"\"")}\"""" else s
 
-  def matchParts(coloredParts: List[ColoredPart], taxonomyData: TaxonomyData): List[MatchedPart] = {
-    val matchedParts = coloredParts.map { cp =>
-      val legoPart = taxonomyData.findPart(cp.partNumber)
-      MatchedPart(cp, legoPart)
-    }
-    matchedParts.sorted
-  }
-
-  def processInventories(taxonomyData: TaxonomyData, files: Array[String]): Unit = {
+  def processInventories(taxonomyDataHolder: ActorRef[TaxonomyHolder.Command], files: Array[String])(implicit timeout: Timeout, scheduler: akka.actor.typed.Scheduler): Unit = {
     for (file <- files) {
       if (file.endsWith(".csv")) {
         val coloredParts = new CsvReader().readColoredParts(file)
-        val matchedParts = matchParts(coloredParts, taxonomyData)
+        val requests = coloredParts.map(cp => TaxonomyHolder.LookupPartRequest(cp.partNumber, cp.elementId, cp.name))
+        val results = Await.result(
+          taxonomyDataHolder.ask(ref => TaxonomyHolder.LookupParts(requests, ref)),
+          Duration("30 seconds")
+        )
+        val matchedParts = coloredParts.zip(results)
+          .map { case (cp, result) => MatchedPart(cp, result.legoPart, result.categoriesGuessed) }
+          .sorted
 
         val outputFile = file.replace(".csv", "-sorted.csv")
         val header = "quantity,color,partNumber_input,name_input,partNumber_taxonomy,name_taxonomy,category,category2,category3,category4\n"

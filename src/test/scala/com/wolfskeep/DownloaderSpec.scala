@@ -11,6 +11,7 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import com.wolfskeep.Downloader.{Downloaded, Failed, NotChanged}
 
 import scala.concurrent.Await
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 class DownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
@@ -51,6 +52,28 @@ class DownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
         val msg = probe.expectMessageType[Downloader.Failed]
         msg.url should ===(s"http://localhost:$port/bad")
         msg.reason should include("HTTP")
+      } finally {
+        Await.result(binding.unbind(), 3.seconds)
+      }
+    }
+
+    "fail when the server takes longer than the request deadline" in {
+      val route: Route = path("hang") {
+        get {
+          val slow = akka.pattern.after(10.seconds, system.classicSystem.scheduler)(Future.successful("late"))(system.executionContext)
+          complete(slow)
+        }
+      }
+      val binding = Await.result(Http()(testKit.system.classicSystem).newServerAt("localhost", 0).bind(route), 3.seconds)
+      val port = binding.localAddress.getPort
+
+      try {
+        val probe = createTestProbe[Downloader.Response]()
+        val downloader = spawn(Downloader(requestDeadline = 500.millis))
+        downloader ! Downloader.Fetch(s"http://localhost:$port/hang", probe.ref)
+        val msg = probe.expectMessageType[Downloader.Failed](3.seconds)
+        msg.url should ===(s"http://localhost:$port/hang")
+        msg.reason should include("deadline")
       } finally {
         Await.result(binding.unbind(), 3.seconds)
       }

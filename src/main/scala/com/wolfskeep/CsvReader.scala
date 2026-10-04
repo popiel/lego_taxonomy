@@ -36,7 +36,7 @@ class CsvReader {
     colorIdToName: Map[Int, String] = Map.empty,
     elementIdToPartColor: Map[Long, (String, String, String)] = Map.empty
   ): List[ColoredPart] = {
-    val lines = source.getLines().toList
+    val lines = try source.getLines().toList finally source.close()
     parseLines(lines, colorIdToName, elementIdToPartColor)
   }
 

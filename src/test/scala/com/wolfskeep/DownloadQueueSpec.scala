@@ -114,29 +114,40 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       fetch3.url should ===("http://example.com/test3")
     }
     
-    "requeue on ask timeout without pausing" in {
+    "answer duplicate Fetches for the same URL from a single download" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
-      val queue = spawn(DownloadQueue(concurrencyLimit = 1, downloaderProbe.ref, askTimeout = 50.millis))
-      val replyProbe = createTestProbe[Downloader.Response]("reply")
-      
-      queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
-      
-      // Request is sent to downloader
-      val fetch1 = downloaderProbe.expectMessageType[Downloader.Fetch]
-      fetch1.url should ===("http://example.com/test")
-      
-      // Don't respond - let it timeout (askTimeout = 50ms)
-      // After timeout, request should be re-queued and retried immediately (no pause)
-      
-      // Request should be retried quickly
-      val fetch2 = downloaderProbe.expectMessageType[Downloader.Fetch](500.millis)
-      fetch2.url should ===("http://example.com/test")
-      
-      // Now respond successfully
-      fetch2.replyTo ! Downloader.Downloaded("http://example.com/test", "content")
-      replyProbe.expectMessage(Downloader.Downloaded("http://example.com/test", "content"))
+      val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
+      val replyProbe1 = createTestProbe[Downloader.Response]("reply1")
+      val replyProbe2 = createTestProbe[Downloader.Response]("reply2")
+
+      queue ! DownloadQueue.Fetch("http://example.com/dup", replyProbe1.ref)
+      queue ! DownloadQueue.Fetch("http://example.com/dup", replyProbe2.ref)
+
+      // the in-flight download serves both callers: only one request is issued
+      val fetch = downloaderProbe.expectMessageType[Downloader.Fetch]
+      fetch.replyTo ! Downloader.Downloaded("http://example.com/dup", "content")
+
+      replyProbe1.expectMessage(Downloader.Downloaded("http://example.com/dup", "content"))
+      replyProbe2.expectMessage(Downloader.Downloaded("http://example.com/dup", "content"))
     }
-    
+
+    "ignore a stray reply for a URL that is not outstanding" in {
+      val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
+      val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
+      val replyProbe = createTestProbe[Downloader.Response]("reply")
+
+      queue ! DownloadQueue.Fetch("http://example.com/test", replyProbe.ref)
+      val fetch = downloaderProbe.expectMessageType[Downloader.Fetch]
+
+      // duplicate reply for the same outstanding URL: forwarded once, then ignored
+      fetch.replyTo ! Downloader.Downloaded("http://example.com/test", "content")
+      fetch.replyTo ! Downloader.Downloaded("http://example.com/test", "content")
+
+      replyProbe.expectMessage(Downloader.Downloaded("http://example.com/test", "content"))
+      replyProbe.expectNoMessage(200.millis)
+      downloaderProbe.expectNoMessage(200.millis)
+    }
+
     "send Failed on non-timeout exceptions" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))

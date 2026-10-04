@@ -15,6 +15,14 @@ according to the taxonomy in https://brickarchitect.com/parts/.
   * data fetch via bulk downloads
 * Modified (e.g. pattern printed) part images downloaded on demand from Brickset and cached locally
 
+## Sample output
+
+The top of the output for set 11512:
+![set 11512](docs/Sorter_output_11512-1_with_header.png)
+
+Output fragment with a printed brick:
+![printed brick](docs/part_image_from_brickset.png)
+
 ### Running in Web Server Mode
 
 To run the web server:

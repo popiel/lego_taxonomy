@@ -7,15 +7,17 @@ import scala.collection.JavaConverters._
 
 object TaxonomyParser {
 
-  def enhancePart(legoPart: LegoPart, html: String): LegoPart = {
+  def parseAltNumbers(html: String, partNumber: String): Set[String] = {
     val doc = Jsoup.parse(html)
-    val altNums = doc.select("span.part_num").asScala
+    doc.select("span.part_num").asScala
       .map(_.text().trim)
       .filter(_.nonEmpty)
-      .filter(_ != legoPart.partNumber)
+      .filter(_ != partNumber)
       .toSet
-    legoPart.copy(altNumbers = altNums)
   }
+
+  def enhancePart(legoPart: LegoPart, html: String): LegoPart =
+    legoPart.copy(altNumbers = parseAltNumbers(html, legoPart.partNumber))
 
   def getCategoryNumber(href: String): Option[String] = {
     val startIndex = href.indexOf("parts/category-")

@@ -99,6 +99,30 @@ class TaxonomyParserSpec extends AnyFlatSpec with Matchers {
     enhanced.altNumbers should not contain ("3069")
   }
 
+  "parseAltNumbers" should "parse alt numbers excluding the part's own number" in {
+    val html = Source.fromFile("src/test/resources/part-3069.html").mkString
+
+    val altNumbers = TaxonomyParser.parseAltNumbers(html, "3069")
+
+    altNumbers should contain ("3069a")
+    altNumbers should contain ("3069b")
+    altNumbers should contain ("30070")
+    altNumbers should contain ("37293")
+    altNumbers should not contain ("3069")
+  }
+
+  it should "parse alt numbers from the current live brickarchitect page format" in {
+    val html = Source.fromFile("src/test/resources/part-3069-web.html").mkString
+
+    val altNumbers = TaxonomyParser.parseAltNumbers(html, "3069")
+
+    altNumbers should contain theSameElementsAs Set("3069a", "3069b", "30070", "35386", "37293", "54285")
+  }
+
+  it should "return an empty set when the page has no part numbers" in {
+    TaxonomyParser.parseAltNumbers("<html><body></body></html>", "3069") shouldBe Set.empty
+  }
+
   "parseCategoryHtml" should "extract image URLs for parts" in {
     val html = Source.fromFile("src/test/resources/category-1.html").mkString
     val url = "https://brickarchitect.com/parts/category-1"

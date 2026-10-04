@@ -1,110 +1,114 @@
 package com.wolfskeep
 
 import akka.actor.typed.{ActorRef, Behavior}
-import akka.actor.typed.scaladsl.{Behaviors, TimerScheduler}
-import akka.actor.typed.scaladsl.AskPattern._
-import akka.util.Timeout
+import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.model.DateTime
-import java.util.concurrent.TimeoutException
 
+import scala.collection.immutable.Queue
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 
 object DownloadQueue {
   // Public command - mirrors Downloader.Fetch but allows internal messages in same protocol
   sealed trait Command
   final case class Fetch(url: String, replyTo: ActorRef[Downloader.Response], since: Option[DateTime] = None) extends Command
-  
+
   // Internal commands
-  private final case class WrappedResult(result: Try[Downloader.Response], request: Fetch) extends Command
+  private final case class DownloaderResponse(response: Downloader.Response) extends Command
   private case object Wakeup extends Command
-  
+
   private case class State(
-    waitingQueue: collection.immutable.Queue[Fetch],
-    activeRequests: Set[Fetch],
+    waitingQueue: Queue[Fetch],
+    outstanding: Map[String, Fetch],
+    duplicates: Map[String, List[Fetch]],
     pausedUntil: Option[Deadline]
   )
-  
+
   def apply(
     concurrencyLimit: Int,
     downloader: ActorRef[Downloader.Command],
-    askTimeout: FiniteDuration = 5.seconds,
     pauseDuration: FiniteDuration = 60.seconds
   ): Behavior[Command] =
     Behaviors.withTimers[Command] { timers =>
       Behaviors.setup { context =>
-        implicit val scheduler = context.system.scheduler
-        implicit val timeout: Timeout = askTimeout
-        implicit val ec = context.executionContext
-        
+        val responseAdapter: ActorRef[Downloader.Response] =
+          context.messageAdapter[Downloader.Response](DownloaderResponse)
+
         def processNextFetch(state: State): State = {
           state.pausedUntil match {
             case Some(deadline) if deadline.hasTimeLeft =>
               timers.startSingleTimer(Wakeup, deadline.timeLeft)
               state
             case _ =>
-              if (state.activeRequests.size < concurrencyLimit && state.waitingQueue.nonEmpty) {
-                val (request, newQueue) = state.waitingQueue.dequeue
-                context.ask(downloader, (ref: ActorRef[Downloader.Response]) =>
-                  Downloader.Fetch(request.url, ref, request.since)
-                ) {
-                  case Success(response) => WrappedResult(Success(response), request)
-                  case Failure(ex) => WrappedResult(Failure(ex), request)
+              if (state.outstanding.size < concurrencyLimit && state.waitingQueue.nonEmpty) {
+                val (request, rest) = state.waitingQueue.dequeue
+                val newState = state.outstanding.get(request.url) match {
+                  case Some(_) =>
+                    // a download for this URL is already in flight; share its response
+                    state.copy(
+                      waitingQueue = rest,
+                      duplicates = state.duplicates + (request.url -> (request :: state.duplicates.getOrElse(request.url, Nil)))
+                    )
+                  case None =>
+                    downloader ! Downloader.Fetch(request.url, responseAdapter, request.since)
+                    state.copy(waitingQueue = rest, outstanding = state.outstanding + (request.url -> request))
                 }
-                state.copy(
-                  waitingQueue = newQueue,
-                  activeRequests = state.activeRequests + request
-                )
+                processNextFetch(newState)
               } else {
                 state
               }
           }
         }
-        
+
+        def onDownloaderResponse(state: State, response: Downloader.Response): State = {
+          val url = response.url
+          state.outstanding.get(url) match {
+            case Some(issued) =>
+              val duplicatesForUrl = state.duplicates.getOrElse(url, Nil)
+              response match {
+                case Downloader.TooManyRequests(_) =>
+                  // politeness pause: requeue the issued request (duplicates stay attached
+                  // to the URL and are answered when the retry completes) without replying
+                  val newState = state.copy(
+                    waitingQueue = state.waitingQueue.enqueue(issued),
+                    outstanding = state.outstanding - url,
+                    pausedUntil = Some(Deadline.now + pauseDuration)
+                  )
+                  processNextFetch(newState)
+                case _ =>
+                  issued.replyTo ! response
+                  duplicatesForUrl.foreach(_.replyTo ! response)
+                  val newState = state.copy(
+                    outstanding = state.outstanding - url,
+                    duplicates = state.duplicates - url
+                  )
+                  processNextFetch(newState)
+              }
+            case None =>
+              // stray or duplicate reply (e.g. a late response after the request deadline
+              // already failed this URL); late replies are expected with the tell protocol
+              context.log.warn(s"Ignoring stray downloader response for $url")
+              state
+          }
+        }
+
         def running(state: State): Behavior[Command] = Behaviors.receive {
           case (_, fetch: Fetch) =>
-            val newState = state.copy(waitingQueue = state.waitingQueue.enqueue(fetch))
+            val newState =
+              if (state.outstanding.contains(fetch.url)) {
+                state.copy(duplicates = state.duplicates + (fetch.url -> (fetch :: state.duplicates.getOrElse(fetch.url, Nil))))
+              } else {
+                state.copy(waitingQueue = state.waitingQueue.enqueue(fetch))
+              }
             running(processNextFetch(newState))
-          
-          case (_, WrappedResult(Success(Downloader.Downloaded(url, content)), request)) =>
-            request.replyTo ! Downloader.Downloaded(url, content)
-            val newActive = state.activeRequests - request
-            running(processNextFetch(state.copy(activeRequests = newActive)))
-          
-          case (_, WrappedResult(Success(Downloader.NotChanged(url)), request)) =>
-            request.replyTo ! Downloader.NotChanged(url)
-            val newActive = state.activeRequests - request
-            running(processNextFetch(state.copy(activeRequests = newActive)))
-          
-          case (_, WrappedResult(Success(Downloader.Failed(url, reason)), request)) =>
-            request.replyTo ! Downloader.Failed(url, reason)
-            val newActive = state.activeRequests - request
-            running(processNextFetch(state.copy(activeRequests = newActive)))
-          
-          case (_, WrappedResult(Success(Downloader.TooManyRequests(url)), request)) =>
-            val newWaiting = state.waitingQueue.enqueue(request)
-            val newPaused = Some(Deadline.now + pauseDuration)
-            val newActive = state.activeRequests - request
-            val newState = state.copy(waitingQueue = newWaiting, pausedUntil = newPaused, activeRequests = newActive)
-            running(processNextFetch(newState))
-          
-          case (_, WrappedResult(Failure(ex), request)) =>
-            ex match {
-              case _: TimeoutException =>
-                val newWaiting = state.waitingQueue.enqueue(request)
-                val newActive = state.activeRequests - request
-                running(processNextFetch(state.copy(waitingQueue = newWaiting, activeRequests = newActive)))
-              case _ =>
-                request.replyTo ! Downloader.Failed(request.url, ex.getMessage)
-                val newActive = state.activeRequests - request
-                running(processNextFetch(state.copy(activeRequests = newActive)))
-            }
-          
+
+          case (_, DownloaderResponse(response)) =>
+            running(onDownloaderResponse(state, response))
+
           case (_, Wakeup) =>
             running(processNextFetch(state.copy(pausedUntil = None)))
         }
-        
-        running(State(collection.immutable.Queue.empty, Set.empty, None))
+
+        running(State(Queue.empty, Map.empty, Map.empty, None))
       }
     }
 }

@@ -24,7 +24,7 @@ object Downloader {
   private final case class WrappedFailure(url: String, cause: Throwable, replyTo: ActorRef[Response]) extends Command
   private final case object NoOp extends Command
 
-  sealed trait Response
+  sealed trait Response { def url: String }
   final case class Downloaded(url: String, content: String) extends Response
   final case class NotChanged(url: String) extends Response
   final case class Failed(url: String, reason: String) extends Response
@@ -32,7 +32,11 @@ object Downloader {
 
   private case class State(cookies: Map[String, Seq[HttpCookie]])
 
-  def apply(retryInterval: FiniteDuration = 60.seconds, retryOn429: Boolean = true): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
+  def apply(
+    retryInterval: FiniteDuration = 60.seconds,
+    retryOn429: Boolean = true,
+    requestDeadline: FiniteDuration = 60.seconds
+  ): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
     Behaviors.setup { context =>
       context.log.info(s"===> cookie-parsing-mode = ${context.system.settings.config.getString("akka.http.parsing.cookie-parsing-mode")}")
 
@@ -102,7 +106,7 @@ object Downloader {
           // requestWithModified.headers.foreach(h => log.debug(s"  Request header: ${h.name} = ${h.value}"))
         }
 
-        val responseFuture = Http(context.system.classicSystem)
+        val httpFuture = Http(context.system.classicSystem)
           .singleRequest(requestWithModified)
           .flatMap { res =>
             if (domain.toLowerCase.contains("brickset")) {
@@ -128,6 +132,13 @@ object Downloader {
               Future.failed(new RuntimeException(s"HTTP ${res.status}"))
             }
           }
+
+        // the only timeout in the download stack: every layer above uses
+        // bi-directional tells, so a hung request must be failed here
+        val deadlineFuture = akka.pattern.after(requestDeadline, context.system.classicSystem.scheduler)(
+          Future.failed(new RuntimeException(s"request deadline of $requestDeadline exceeded"))
+        )(ec)
+        val responseFuture = Future.firstCompletedOf(Seq(httpFuture, deadlineFuture))
 
         context.pipeToSelf(responseFuture) {
           case scala.util.Success(Left((None, _, None))) =>

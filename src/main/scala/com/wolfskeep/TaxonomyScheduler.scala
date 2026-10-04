@@ -2,60 +2,72 @@ package com.wolfskeep
 
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.AskPattern._
-import akka.util.Timeout
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext
-import scala.util.{Success, Failure}
 import java.time.{LocalTime, LocalDateTime, ZonedDateTime, ZoneId}
 
 object TaxonomyScheduler {
   sealed trait Command
   case object FetchTaxonomy extends Command
-  private case class TaxonomyFetchedResult(taxonomyData: TaxonomyData) extends Command
+  private case object AugmentationCompleteResult extends Command
   private case class TaxonomyFetchedFailed(reason: Throwable) extends Command
+  private case object CycleWatchdog extends Command
 
   private val FetchHour = 3
   private val FetchMinute = 0
 
-  def apply(fetcherRef: ActorRef[TaxonomyFetcher.Command], taxonomyDataHolder: ActorRef[TaxonomyHolder.Command]): Behavior[Command] = {
-    Behaviors.setup { context =>
-      implicit val ec: ExecutionContext = context.executionContext
-      implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
-      implicit val timeout: Timeout = Timeout(30.minutes)
+  def apply(
+    fetcherRef: ActorRef[TaxonomyFetcher.Command],
+    taxonomyDataHolder: ActorRef[TaxonomyHolder.Command],
+    cycleTimeout: FiniteDuration = 35.minutes
+  ): Behavior[Command] = {
+    Behaviors.withTimers[Command] { timers =>
+      Behaviors.setup { context =>
+        implicit val ec: scala.concurrent.ExecutionContext = context.executionContext
 
-      def scheduleNextFetch(): Unit = {
-        val delay = calculateDelayUntil3am()
-        context.system.scheduler.scheduleOnce(delay, new Runnable {
-          override def run(): Unit = {
-            context.self ! FetchTaxonomy
+        // long-lived adapter: with the tell-based protocol the fetcher may reply
+        // more than once per request (late replies), so no one-shot ask is used
+        val responseAdapter: ActorRef[TaxonomyFetcher.Response] =
+          context.messageAdapter[TaxonomyFetcher.Response] {
+            case TaxonomyFetcher.AugmentationComplete => AugmentationCompleteResult
+            case TaxonomyFetcher.Failed(reason)      => TaxonomyFetchedFailed(reason)
           }
-        })
-      }
 
-      Behaviors.receiveMessage[Command] { message =>
-        message match {
-          case FetchTaxonomy =>
-            context.ask(fetcherRef, TaxonomyFetcher.GetTaxonomy) {
-              case Success(TaxonomyFetcher.TaxonomyFetched(taxonomyData)) =>
-                TaxonomyFetchedResult(taxonomyData)
-              case Success(TaxonomyFetcher.Failed(reason)) =>
-                TaxonomyFetchedFailed(reason)
-              case Failure(ex) =>
-                TaxonomyFetchedFailed(ex)
+        def scheduleNextFetch(): Unit = {
+          val delay = calculateDelayUntil3am()
+          context.system.scheduler.scheduleOnce(delay, new Runnable {
+            override def run(): Unit = {
+              context.self ! FetchTaxonomy
             }
-            Behaviors.same
+          })
+        }
 
-          case TaxonomyFetchedResult(taxonomyData) =>
-            taxonomyDataHolder ! TaxonomyHolder.SetTaxonomy(taxonomyData)
-            context.log.info(s"Taxonomy fetched: ${taxonomyData.categories.size} categories, ${taxonomyData.parts.size} parts")
-            scheduleNextFetch()
-            Behaviors.same
+        Behaviors.receiveMessage[Command] { message =>
+          message match {
+            case FetchTaxonomy =>
+              fetcherRef ! TaxonomyFetcher.GetTaxonomy(responseAdapter)
+              // if the fetcher is busy mid-cycle it ignores the request; the
+              // watchdog re-issues it so the daily chain never breaks
+              timers.startSingleTimer(CycleWatchdog, cycleTimeout)
+              Behaviors.same
 
-          case TaxonomyFetchedFailed(reason) =>
-            context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
-            scheduleNextFetch()
-            Behaviors.same
+            case AugmentationCompleteResult =>
+              timers.cancel(CycleWatchdog)
+              // the fetcher publishes SetTaxonomy/AugmentPart to the holder itself
+              context.log.info("Taxonomy fetch cycle complete")
+              scheduleNextFetch()
+              Behaviors.same
+
+            case TaxonomyFetchedFailed(reason) =>
+              timers.cancel(CycleWatchdog)
+              context.log.error(s"Taxonomy fetch failed: ${reason.getMessage}")
+              scheduleNextFetch()
+              Behaviors.same
+
+            case CycleWatchdog =>
+              context.log.warn(s"Taxonomy fetch cycle did not complete within $cycleTimeout; re-issuing the fetch request")
+              context.self ! FetchTaxonomy
+              Behaviors.same
+          }
         }
       }
     }

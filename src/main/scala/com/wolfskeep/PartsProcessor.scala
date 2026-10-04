@@ -27,27 +27,29 @@ object PartsProcessor {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
+      implicit val classicScheduler: akka.actor.Scheduler = context.system.classicSystem.scheduler
       val logger = context.log
 
       Behaviors.receiveMessage {
         case ProcessParts(coloredParts, replyTo) =>
           logger.info(s"ProcessParts with ${coloredParts.size} input parts")
-          implicit val taxonomyTimeout: Timeout = Timeout(1.seconds)
+          implicit val lookupTimeout: Timeout = Timeout(5.seconds)
 
-          val taxonomyDataFuture = taxonomyDataHolder.ask(ref => TaxonomyHolder.GetTaxonomy(ref))(taxonomyTimeout, scheduler)
+          val requests = coloredParts.map(cp => TaxonomyHolder.LookupPartRequest(cp.partNumber, cp.elementId, cp.name))
+          val lookupFuture = taxonomyDataHolder.ask(ref => TaxonomyHolder.LookupParts(requests, ref))
 
-          taxonomyDataFuture.onComplete {
-            case scala.util.Success(data: TaxonomyHolder.TaxonomyDataResponse) =>
-              val taxonomyData = data.taxonomyData
+          lookupFuture.onComplete {
+            case scala.util.Success(results) =>
+              val paired = coloredParts.zip(results)
+              val (exact, nonExact) = paired.partition { case (_, result) =>
+                result.via == TaxonomyHolder.Exact || result.via == TaxonomyHolder.AltNumber
+              }
 
-              val (matched, unmatched) = coloredParts.map(part => MatchedPart(part, taxonomyData.findPart(part.partNumber), false))
-                .partition(_.legoPart.nonEmpty)
-
-              if (unmatched.isEmpty) {
-                logger.info(s"ProcessParts replying with ${matched.size} output parts (Brickset: 0, BrickLink: 0, Rebrickable: 0)")
-                replyTo ! ProcessedParts(matched.sorted)
+              if (nonExact.isEmpty) {
+                logger.info(s"ProcessParts replying with ${exact.size} output parts")
+                replyTo ! ProcessedParts(exact.map { case (cp, result) => buildMatchedPart(cp, result) }.sorted)
               } else {
-                processUnmatchedParts(matched, unmatched, taxonomyData, rebrickableDataActor, downloader, ldrawImageFetcher, replyTo)(ec, scheduler, logger)
+                processNonExactParts(exact, nonExact, rebrickableDataActor, downloader, ldrawImageFetcher, replyTo)(ec, scheduler, classicScheduler, logger)
               }
 
             case scala.util.Failure(ex) =>
@@ -60,114 +62,115 @@ object PartsProcessor {
     }
   }
 
-  private def processUnmatchedParts(
-    matched: List[MatchedPart],
-    unmatched: List[MatchedPart],
-    taxonomyData: TaxonomyData,
+  private def buildMatchedPart(coloredPart: ColoredPart, result: TaxonomyHolder.LookupResult): MatchedPart =
+    MatchedPart(coloredPart, result.legoPart, result.categoriesGuessed)
+
+  private def processNonExactParts(
+    exact: List[(ColoredPart, TaxonomyHolder.LookupResult)],
+    nonExact: List[(ColoredPart, TaxonomyHolder.LookupResult)],
     rebrickableDataActor: ActorRef[RebrickableHolder.Command],
     downloader: ActorRef[CachedDownloader.Command],
     ldrawImageFetcher: LDrawImageFetcherTrait,
     replyTo: ActorRef[ProcessedParts]
-  )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, logger: org.slf4j.Logger): Unit = {
-    implicit val rebrickableTimeout: Timeout = Timeout(30.seconds)
+  )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, classicScheduler: akka.actor.Scheduler, logger: org.slf4j.Logger): Unit = {
+    nonExact.foreach {
+      case (cp, result) if result.via == TaxonomyHolder.Miss =>
+        logger.warn(s"Failed to match part number ${cp.partNumber}, element ${cp.elementId.getOrElse("")}: ${cp.name}")
+      case _ => ()
+    }
 
-    val rebrickableDataFuture = rebrickableDataActor.ask(RebrickableHolder.GetData(_))(rebrickableTimeout, scheduler)
+    def fallback: List[MatchedPart] =
+      exact.map { case (cp, result) => buildMatchedPart(cp, result) } ++
+        nonExact.map { case (cp, result) => buildMatchedPart(cp, result) }
 
-    rebrickableDataFuture.onComplete {
-      case scala.util.Success(rebrickableData) =>
-        val futures: List[Future[MatchedPart]] = unmatched.map { mp =>
-          processSinglePart(mp, taxonomyData, rebrickableData, downloader, ldrawImageFetcher)
-        }
-        val sequenceFuture: Future[List[MatchedPart]] = Future.sequence(futures)
-        sequenceFuture.onComplete {
-          case scala.util.Success(processedResults: List[MatchedPart]) =>
-            val allMatchedSoFar: List[MatchedPart] = matched ++ processedResults
-            val (withCategories, withoutCategories) = allMatchedSoFar.partition(_.legoPart.exists(_.categories.nonEmpty))
-            val fuzzyMatched = inferCategoriesByName(withoutCategories, withCategories, taxonomyData, logger)
-            val sortedParts = (withCategories ++ fuzzyMatched).sorted
-            logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
-            replyTo ! ProcessedParts(sortedParts)
+    def replyWith(all: List[MatchedPart]): Unit = {
+      val (withCategories, withoutCategories) = all.partition(_.legoPart.exists(_.categories.nonEmpty))
+      val prefixMatched = withoutCategories.map(mp => uploadLocalPrefixMatch(mp, withCategories))
+      val sortedParts = (withCategories ++ prefixMatched).sorted
+      logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
+      replyTo ! ProcessedParts(sortedParts)
+    }
 
-          case scala.util.Failure(ex) =>
-            logger.error(s"Failed to process parts: ${ex.getMessage}")
-            val sortedParts = (matched ++ unmatched).sorted
-            logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
-            replyTo ! ProcessedParts(sortedParts)
-        }
+    // image resolution applies to Modified results only; Guessed results keep their
+    // synthesized identity (partNumber "", no image) and Misses have no lego part to enrich
+    val modified = nonExact.filter { case (_, result) => result.via == TaxonomyHolder.Modified }
 
-      case scala.util.Failure(ex) =>
-        logger.error(s"Failed to get rebrickable data: ${ex.getMessage}")
-        val sortedParts = (matched ++ unmatched).sorted
-        logger.info(s"ProcessParts replying with ${sortedParts.size} output parts")
-        replyTo ! ProcessedParts(sortedParts)
+    if (modified.isEmpty) {
+      replyWith(fallback)
+    } else {
+      implicit val rebrickableTimeout: Timeout = Timeout(30.seconds)
+      val rebrickableDataFuture = rebrickableDataActor.ask(RebrickableHolder.GetData(_))
+      rebrickableDataFuture.onComplete {
+        case scala.util.Success(rebrickableData) =>
+          val futures = modified.map { case (cp, result) =>
+            finishModifiedPart(cp, result, rebrickableData, downloader, ldrawImageFetcher)
+          }
+          Future.sequence(futures).onComplete {
+            case scala.util.Success(finished) =>
+              val rest = nonExact
+                .filter { case (_, result) => result.via != TaxonomyHolder.Modified }
+                .map { case (cp, result) => buildMatchedPart(cp, result) }
+              replyWith(exact.map { case (cp, result) => buildMatchedPart(cp, result) } ++ finished ++ rest)
+            case scala.util.Failure(ex) =>
+              logger.error(s"Failed to process parts: ${ex.getMessage}")
+              replyWith(fallback)
+          }
+
+        case scala.util.Failure(ex) =>
+          logger.error(s"Failed to get rebrickable data: ${ex.getMessage}")
+          replyWith(fallback)
+      }
     }
   }
 
-  private def createGuessedLegoPart(name: String, categories: List[Category]): LegoPart =
-    LegoPart(
-      partNumber = "",
-      name = name,
-      categories = categories,
-      sequenceNumber = 0,
-      altNumbers = Set.empty,
-      imageWidth = None,
-      imageHeight = None,
-      imageUrl = None
-    )
-
-  private def processSinglePart(
-    matchedPart: MatchedPart,
-    taxonomyData: TaxonomyData,
+  private def finishModifiedPart(
+    coloredPart: ColoredPart,
+    result: TaxonomyHolder.LookupResult,
     rebrickableData: com.wolfskeep.rebrickable.Data,
     downloader: ActorRef[CachedDownloader.Command],
     ldrawImageFetcher: LDrawImageFetcherTrait
-  )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, logger: org.slf4j.Logger): Future[MatchedPart] = {
-    val coloredPart = matchedPart.coloredPart
-    val originalElementId = coloredPart.elementId
+  )(implicit ec: ExecutionContext, scheduler: akka.actor.typed.Scheduler, classicScheduler: akka.actor.Scheduler, logger: org.slf4j.Logger): Future[MatchedPart] = {
+    val taxonomyPart = result.legoPart.get
 
     val colorNameToId = rebrickableData.colors.map(c => c.name -> c.id).toMap
 
-    val currentElementId = originalElementId
-    val elemIdStr = currentElementId.getOrElse("")
-    val designIdOpt: Option[String] = if (elemIdStr.nonEmpty) {
-      Try(elemIdStr.toLong).toOption.flatMap(rebrickableData.elementIdToDesignId)
-    } else None
-
-    val taxonomyMatch: Option[LegoPart] = taxonomyData.findBasePart(coloredPart.partNumber)
-      .orElse(designIdOpt.flatMap(taxonomyData.findBasePart))
-
     val ldImageUrl = Try(findPartImageUrl(coloredPart, colorNameToId, ldrawImageFetcher)).getOrElse(None)
 
-    val bricksetTimeout: Timeout = Timeout(5.seconds)
+    // hybrid: a long ask deadline (never races the base downloader's request
+    // deadline) plus a short user-facing bound; when the UX bound wins, the
+    // download continues in the background and is cached for later lookups
+    val bricksetAskTimeout: Timeout = Timeout(90.seconds)
+    val bricksetUxTimeout: FiniteDuration = 5.seconds
 
     val imageUrlFuture = ldImageUrl match {
       case Some(url) => Future.successful(Some(url))
       case None =>
-        Try(
+        val bricksetFuture = Try(
           BricksetPartFetcher.fetchPartDetails(
             downloader,
             coloredPart.partNumber,
-            originalElementId
-          )(bricksetTimeout, scheduler, ec).map { bricksetResult =>
+            coloredPart.elementId
+          )(bricksetAskTimeout, scheduler, ec).map { bricksetResult =>
             bricksetResult.flatMap(_.imageUrl)
           }.recover { case _ => None }
         ).getOrElse(Future.successful(None))
+        Future.firstCompletedOf(Seq(
+          bricksetFuture,
+          akka.pattern.after(bricksetUxTimeout, classicScheduler)(Future.successful(None))(ec)
+        ))
     }
 
     imageUrlFuture.map { imageUrl =>
-      taxonomyMatch match {
-        case Some(tp) =>
-          val newLegoPart = tp.copy(
-            partNumber = coloredPart.partNumber,
-            imageUrl = imageUrl,
-            imageWidth = None,
-            imageHeight = None
-          )
-          matchedPart.copy(legoPart = Some(newLegoPart))
-        case None =>
-          logger.warn(s"Failed to match element $elemIdStr, part number ${coloredPart.partNumber}, design ${designIdOpt}: ${coloredPart.name}")
-          matchedPart.copy(coloredPart = coloredPart.copy(elementId = currentElementId))
-      }
+      MatchedPart(
+        coloredPart,
+        Some(taxonomyPart.copy(
+          partNumber = coloredPart.partNumber,
+          imageUrl = imageUrl,
+          imageWidth = None,
+          imageHeight = None
+        )),
+        result.categoriesGuessed
+      )
     }
   }
 
@@ -205,88 +208,40 @@ object PartsProcessor {
     }
   }
 
-  private def inferCategoriesByName(
-    partsWithoutCategories: List[MatchedPart],
-    matchedParts: List[MatchedPart],
-    taxonomyData: TaxonomyData,
-    logger: org.slf4j.Logger
-  ): List[MatchedPart] = {
-    partsWithoutCategories.map { mp =>
-      val searchResults = taxonomyData.searchByName(mp.coloredPart.name)
-      val (updatedMatchedPart, _) = inferCategories(mp, searchResults, matchedParts, taxonomyData, logger)
-      updatedMatchedPart
-    }
-  }
+  private def uploadLocalPrefixMatch(mp: MatchedPart, candidates: List[MatchedPart]): MatchedPart = {
+    val lowerName = mp.coloredPart.name.toLowerCase
 
-  private def inferCategories(
-    mp: MatchedPart,
-    searchResults: List[(LegoPart, Int)],
-    matchedParts: List[MatchedPart],
-    taxonomyData: TaxonomyData,
-    logger: org.slf4j.Logger
-  ): (MatchedPart, Boolean) = {
-    val coloredPartName = mp.coloredPart.name
+    val prefixMatch = candidates
+      .flatMap(_.legoPart)
+      .flatMap { legoPart =>
+        candidates.find(c => c.legoPart.contains(legoPart)).map { c => (legoPart, c.coloredPart.name) }
+      }
+      .filter { case (_, coloredPartName) =>
+        lowerName.startsWith(coloredPartName.toLowerCase)
+      }
+      .sortBy { case (_, coloredPartName) => -coloredPartName.length }
+      .headOption
 
-    logger.debug(s"Fuzzy matching: partNumber=${mp.coloredPart.partNumber}, name=$coloredPartName")
-    val wordsTokenized = TaxonomyData.tokenize(coloredPartName)
-    logger.debug(s"  Tokenized: ${wordsTokenized.mkString(", ")}")
-    logger.debug(s"  Top 5 fuzzy matches: ${searchResults.take(5).map { case (part, count) => s"${part.name} ($count)" }.mkString(", ")}")
-
-    if (searchResults.isEmpty) {
-      return (mp, false)
-    }
-
-    val bricksetWords = wordsTokenized.toSet
-
-    val exactMatch = searchResults.find { case (part, _) =>
-      val partWords = TaxonomyData.tokenize(part.name).toSet
-      partWords.subsetOf(bricksetWords)
-    }
-
-    exactMatch match {
-      case Some((matchedPart, _)) =>
-        val newName = s"${matchedPart.name} (guessed)"
-        val updatedLegoPart = mp.legoPart.getOrElse(createGuessedLegoPart(newName, matchedPart.categories))
-          .copy(name = newName, categories = matchedPart.categories)
-        (MatchedPart(mp.coloredPart, Some(updatedLegoPart), categoriesGuessed = true), true)
-
+    prefixMatch match {
+      case Some((matchedLegoPart, _)) =>
+        val newName = s"${matchedLegoPart.name} (guessed)"
+        val updatedLegoPart = mp.legoPart.getOrElse(createGuessedLegoPart(newName, matchedLegoPart.categories))
+          .copy(name = newName, categories = matchedLegoPart.categories)
+        MatchedPart(mp.coloredPart, Some(updatedLegoPart), categoriesGuessed = true)
       case None =>
-        val top5 = searchResults.take(5)
-        val commonPrefix = taxonomyData.findCommonCategoryPrefix(top5.map(_._1))
-        if (commonPrefix.nonEmpty) {
-          val bestMatch = top5.find { case (part, _) =>
-            part.categories.zip(commonPrefix).forall { case (cat, prefixCat) => cat == prefixCat }
-          }
-          val newName = bestMatch.map(p => s"${p._1.name} (guessed)").getOrElse(mp.coloredPart.name)
-          val updatedLegoPart = mp.legoPart.getOrElse(createGuessedLegoPart(newName, commonPrefix))
-            .copy(name = newName, categories = commonPrefix)
-          (MatchedPart(mp.coloredPart, Some(updatedLegoPart), categoriesGuessed = true), true)
-        } else {
-          val bricksetNameLower = mp.coloredPart.name.toLowerCase
-
-          val prefixMatch = matchedParts
-            .flatMap(_.legoPart)
-            .flatMap { legoPart =>
-              matchedParts.find(mp => mp.legoPart.contains(legoPart)).map { matched =>
-                (legoPart, matched.coloredPart.name)
-              }
-            }
-            .filter { case (_, coloredPartName) =>
-              bricksetNameLower.startsWith(coloredPartName.toLowerCase)
-            }
-            .sortBy { case (_, coloredPartName) => -coloredPartName.length }
-            .headOption
-
-          prefixMatch match {
-            case Some((matchedLegoPart, _)) =>
-              val newName = s"${matchedLegoPart.name} (guessed)"
-              val updatedLegoPart = mp.legoPart.getOrElse(createGuessedLegoPart(newName, matchedLegoPart.categories))
-                .copy(name = newName, categories = matchedLegoPart.categories)
-              (MatchedPart(mp.coloredPart, Some(updatedLegoPart), categoriesGuessed = true), true)
-            case None =>
-              (mp, false)
-          }
-        }
+        mp
     }
   }
+
+  private def createGuessedLegoPart(name: String, categories: List[Category]): LegoPart =
+    LegoPart(
+      partNumber = "",
+      name = name,
+      categories = categories,
+      sequenceNumber = 0,
+      altNumbers = Set.empty,
+      imageUrl = None,
+      imageWidth = None,
+      imageHeight = None
+    )
 }
