@@ -9,7 +9,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 object BricksetPartFetcher {
   val baseUrl = "https://brickset.com/parts"

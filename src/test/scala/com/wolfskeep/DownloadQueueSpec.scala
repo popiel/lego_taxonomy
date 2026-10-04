@@ -2,12 +2,13 @@ package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
+
 import akka.actor.typed.ActorRef
 
 import scala.concurrent.duration._
 
 class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
-  "A DownloadQueue" must {
+  "A DownloadQueue" should {
     "pass through Downloaded responses" in {
       val downloaderProbe = createTestProbe[Downloader.Command]("downloader")
       val queue = spawn(DownloadQueue(concurrencyLimit = 2, downloaderProbe.ref))
@@ -179,13 +180,10 @@ class DownloadQueueSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
       
       // First request returns 429
       fetch1.replyTo ! Downloader.TooManyRequests("http://example.com/test1")
-      
-      // Give time for 429 processing
-      Thread.sleep(50)
-      
-      // Both requests should be queued, no responses yet
-      replyProbe1.expectNoMessage(100.millis)
-      replyProbe2.expectNoMessage(100.millis)
+
+      // Both requests should be queued during the pause, no responses yet
+      replyProbe1.expectNoMessage(150.millis)
+      replyProbe2.expectNoMessage(150.millis)
       
       // During pause (500ms), no new requests should be sent to downloader
       downloaderProbe.expectNoMessage(200.millis)

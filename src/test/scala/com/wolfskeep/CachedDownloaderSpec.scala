@@ -1,13 +1,13 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.wordspec.AnyWordSpecLike
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Route
-import org.scalatest.wordspec.AnyWordSpecLike
 
 import akka.http.scaladsl.model.DateTime
 
@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 import java.util.concurrent.atomic.AtomicInteger
 
 class CachedDownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
-  "A CachedDownloader" must {
+  "A CachedDownloader" should {
     "download and cache a page on first fetch" in {
       val route: Route = path("test") {
         get {

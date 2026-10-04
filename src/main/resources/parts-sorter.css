@@ -23,7 +23,11 @@
         }
         .input-section input[type="file"] {
             margin-top: 10px;
-	    margin-bottom: 5px;
+            margin-bottom: 5px;
+        }
+        .uploaded-file-name {
+            color: #666;
+            font-size: 13px;
         }
         .output-section {
             margin-top: 20px;

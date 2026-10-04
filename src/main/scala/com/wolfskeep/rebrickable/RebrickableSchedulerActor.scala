@@ -16,19 +16,19 @@ object RebrickableSchedulerActor {
   case object FetchRebrickable extends Command
   private case class FetchedResult(data: Data) extends Command
   private case class FetchedFailed(reason: Throwable) extends Command
-  private case class LDrawPrefetchComplete() extends Command
 
   private val FetchHour = 3
   private val FetchMinute = 0
 
   def apply(
     fetcherRef: ActorRef[RebrickableFetcherActor.Command],
-    dataActor: ActorRef[RebrickableHolder.Command]
+    dataActor: ActorRef[RebrickableHolder.Command],
+    fetchAsk: FiniteDuration = com.wolfskeep.Timeouts.scheduled.rebrickableFetch
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
       implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
-      implicit val timeout: Timeout = Timeout(30.minutes)
+      implicit val timeout: Timeout = Timeout(fetchAsk)
 
       def scheduleNextFetch(): Unit = {
         val delay = calculateDelayUntil3am()
@@ -70,10 +70,6 @@ object RebrickableSchedulerActor {
 
           case FetchedFailed(reason) =>
             context.log.error("RebrickableScheduler: Fetch failed: {}", reason.getMessage)
-            scheduleNextFetch()
-            Behaviors.same
-
-          case LDrawPrefetchComplete() =>
             scheduleNextFetch()
             Behaviors.same
         }

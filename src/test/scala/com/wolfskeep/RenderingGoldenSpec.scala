@@ -6,7 +6,6 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.Props
 import akka.actor.typed.SpawnProtocol
 import akka.actor.typed.scaladsl.AskPattern._
-import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.ScalatestRouteTest
@@ -84,43 +83,31 @@ class RenderingGoldenSpec extends AnyWordSpecLike with Matchers with ScalatestRo
     )
   )
 
-  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] = spawnActor(
-    Behaviors.receiveMessage[RebrickableHolder.Command] {
-      case RebrickableHolder.GetData(replyTo) =>
-        replyTo ! rebrickableData
-        Behaviors.same
-      case _ =>
-        Behaviors.same
-    },
-    "rebrickable-data"
-  )
+  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] =
+    spawnActor(TestStubs.stubRebrickable(rebrickableData), "rebrickable-data")
 
   val taxonomyHolder: ActorRef[TaxonomyHolder.Command] =
     spawnActor(TaxonomyHolder(rebrickableDataActor), "taxonomy-holder")
 
   taxonomyHolder ! TaxonomyHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
 
-  Thread.sleep(100)
+  Await.result(taxonomyHolder.ask(TaxonomyHolder.GetTaxonomy(_)), 3.seconds)
 
   val partsProcessor: ActorRef[PartsProcessor.Command] =
     spawnActor(PartsProcessor(taxonomyHolder), "parts-processor")
 
   val imageResolver: ActorRef[ImageResolver.Command] = spawnActor(
-    Behaviors.receiveMessage[ImageResolver.Command] {
-      case ImageResolver.GetLdrawImage(_, _, replyTo) =>
-        replyTo ! ImageResolver.LdrawImageReady(Array[Byte](1, 2, 3))
-        Behaviors.same
-      case ImageResolver.GetBricksetImageUrl(_, _, replyTo) =>
-        replyTo ! ImageResolver.BricksetImageResolved("https://example.com/98138pr0035.jpg")
-        Behaviors.same
-    },
+    TestStubs.fakeImageResolver(
+      ImageResolver.LdrawImageReady(Array[Byte](1, 2, 3)),
+      ImageResolver.BricksetImageResolved("https://example.com/98138pr0035.jpg")
+    ),
     "image-resolver"
   )
 
   val route: Route =
     Routes.all(typedSystem, partsProcessor, rebrickableDataActor, imageResolver)
 
-  "Rendering through the real TaxonomyHolder-PartsProcessor-Routes chain" must {
+  "Rendering through the real TaxonomyHolder-PartsProcessor-Routes chain" should {
 
     "redirect a submitted set number to its bookmarkable URL" in {
       Post("/parts-sorter", FormData("setNumber" -> "21321-1")) ~> route ~> check {

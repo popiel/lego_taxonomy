@@ -2,12 +2,12 @@ package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.BeforeAndAfterAll
+
 import com.wolfskeep.rebrickable.RebrickableHolder
 
 import scala.concurrent.duration._
 
-class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with BeforeAndAfterAll {
+class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   private val taxonomyParts = List(
     LegoPart(
@@ -37,7 +37,11 @@ class PartsProcessorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
 
   taxonomyDataHolder ! TaxonomyHolder.SetTaxonomy(TaxonomyData(Set.empty, taxonomyParts))
 
-  Thread.sleep(100)
+  {
+    val probe = createTestProbe[TaxonomyHolder.Response]()
+    taxonomyDataHolder ! TaxonomyHolder.GetTaxonomy(probe.ref)
+    probe.expectMessageType[TaxonomyHolder.TaxonomyDataResponse]
+  }
 
   "PartsProcessor" should {
     "return same number of MatchedParts as input ColoredParts when all parts match taxonomy directly" in {

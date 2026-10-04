@@ -46,11 +46,12 @@ object ImageResolver {
     ldrawFetcher: LDrawImageFetcherTrait,
     downloader: ActorRef[CachedDownloader.Command],
     cache: ActorRef[DiskCache.Command],
-    negativeTtl: FiniteDuration = Timeouts.web.imageNegativeTtl
+    negativeTtl: FiniteDuration = Timeouts.web.imageNegativeTtl,
+    bricksetAsk: FiniteDuration = Timeouts.service.bricksetAsk
   ): Behavior[Command] = Behaviors.setup { context =>
     implicit val ec: ExecutionContext = context.executionContext
     implicit val scheduler: akka.actor.typed.Scheduler = context.system.scheduler
-    implicit val askTimeout: Timeout = Timeout(90.seconds)
+    implicit val askTimeout: Timeout = Timeout(bricksetAsk)
     val blockingEc: ExecutionContext =
       context.system.dispatchers.lookup(DispatcherSelector.fromConfig("akka.actor.default-blocking-io-dispatcher"))
 

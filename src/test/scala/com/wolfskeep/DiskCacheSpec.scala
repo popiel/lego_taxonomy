@@ -6,7 +6,7 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import java.io.File
 
 class DiskCacheSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
-  "A DiskCache" must {
+  "A DiskCache" should {
     "insert and retrieve a value" in {
       val cache = spawn(DiskCache())
       val probe = createTestProbe[DiskCache.Response]()

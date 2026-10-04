@@ -1,16 +1,15 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.wordspec.AnyWordSpecLike
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.Behaviors
-import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.matchers.should.Matchers
 
 import com.wolfskeep.rebrickable.{Data, Element, RebrickableHolder}
 
 import scala.concurrent.duration._
 
-class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with Matchers {
+class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   private val taxonomyParts = List(
     LegoPart("3001", "Brick 2 x 4", List(Category("1", "Basic", None)), 1, Set.empty),
@@ -52,12 +51,7 @@ class TaxonomyHolderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike 
     spawn(Behaviors.ignore[RebrickableHolder.Command], name = uniqueName("deaf-rebrickable"))
 
   private def stubRebrickable(data: Data): ActorRef[RebrickableHolder.Command] =
-    spawn(Behaviors.receiveMessage[RebrickableHolder.Command] {
-      case RebrickableHolder.GetData(replyTo) =>
-        replyTo ! data
-        Behaviors.same
-      case _ => Behaviors.same
-    }, name = uniqueName("stub-rebrickable"))
+    spawn(TestStubs.stubRebrickable(data), name = uniqueName("stub-rebrickable"))
 
   private var nameCounter = 0
   private def uniqueName(prefix: String): String = {

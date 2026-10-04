@@ -42,8 +42,11 @@ object TaxonomyHolder {
     categoriesGuessed: Boolean = false
   )
 
-  def apply(rebrickableRef: ActorRef[RebrickableHolder.Command]): Behavior[Command] = Behaviors.setup { context =>
-    idle(rebrickableRef, None, Map.empty)
+  def apply(
+    rebrickableRef: ActorRef[RebrickableHolder.Command],
+    rebrickableAsk: FiniteDuration = Timeouts.service.rebrickableAsk
+  ): Behavior[Command] = Behaviors.setup { context =>
+    idle(rebrickableRef, rebrickableAsk, None, Map.empty)
   }
 
   private def merged(taxonomyData: TaxonomyData, overlay: Map[String, Set[String]]): TaxonomyData =
@@ -54,6 +57,7 @@ object TaxonomyHolder {
 
   private def idle(
     rebrickableRef: ActorRef[RebrickableHolder.Command],
+    rebrickableAsk: FiniteDuration,
     taxonomyData: Option[TaxonomyData],
     overlay: Map[String, Set[String]]
   ): Behavior[Command] = Behaviors.receive { (context, message) =>
@@ -64,12 +68,12 @@ object TaxonomyHolder {
         TaxonomySortMain.writeToFile("categories.csv", catCsv)
         TaxonomySortMain.writeToFile("parts.csv", partCsv)
         context.log.info(s"Taxonomy saved: ${newTaxonomyData.categories.size} categories, ${newTaxonomyData.parts.size} parts")
-        idle(rebrickableRef, Some(newTaxonomyData), Map.empty)
+        idle(rebrickableRef, rebrickableAsk, Some(newTaxonomyData), Map.empty)
 
       case AugmentPart(partNumber, altNumbers) =>
         taxonomyData match {
           case Some(data) if data.parts.exists(_.partNumber == partNumber) =>
-            idle(rebrickableRef, taxonomyData, overlay + (partNumber -> altNumbers))
+            idle(rebrickableRef, rebrickableAsk, taxonomyData, overlay + (partNumber -> altNumbers))
           case _ =>
             context.log.warn(s"Ignoring AugmentPart for unknown part $partNumber")
             Behaviors.same
@@ -80,14 +84,14 @@ object TaxonomyHolder {
           case Some(data) =>
             val mergedData = merged(data, overlay)
             replyTo ! TaxonomyDataResponse(mergedData)
-            idle(rebrickableRef, Some(mergedData), Map.empty)
+            idle(rebrickableRef, rebrickableAsk, Some(mergedData), Map.empty)
           case None =>
             replyTo ! TaxonomyDataResponse(TaxonomyData(Set.empty, Nil))
             Behaviors.same
         }
 
       case LookupParts(requests, replyTo) =>
-        implicit val timeout: Timeout = Timeout(1.second)
+        implicit val timeout: Timeout = Timeout(rebrickableAsk)
         context.ask(rebrickableRef, RebrickableHolder.GetData) {
           case scala.util.Success(data) =>
             LookupWithRebrickable(requests, replyTo, data)
@@ -101,7 +105,7 @@ object TaxonomyHolder {
         val mergedData = taxonomyData.map(merged(_, overlay)).getOrElse(TaxonomyData(Set.empty, Nil))
         val results = requests.map(resolve(mergedData, rebrickableData))
         replyTo ! results
-        idle(rebrickableRef, taxonomyData.map(merged(_, overlay)), Map.empty)
+        idle(rebrickableRef, rebrickableAsk, taxonomyData.map(merged(_, overlay)), Map.empty)
     }
   }
 

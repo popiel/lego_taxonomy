@@ -2,11 +2,10 @@ package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.matchers.should.Matchers
 
 import scala.concurrent.duration._
 
-class TaxonomySchedulerSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with Matchers {
+class TaxonomySchedulerSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   "TaxonomyScheduler" should {
 

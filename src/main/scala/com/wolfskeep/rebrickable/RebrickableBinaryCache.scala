@@ -52,13 +52,6 @@ object RebrickableBinaryCache {
     }
   }
 
-  def delete(name: String): Unit = {
-    val path = CacheDir.resolve(name)
-    if (Files.exists(path)) {
-      Files.delete(path)
-    }
-  }
-
   def canRetry(name: String): Boolean = {
     val today = LocalDate.now()
     retryCounts.get(name) match {
@@ -122,25 +115,9 @@ object RebrickableBinaryCache {
     ageHours < FreshnessThresholdHours
   }
 
-  def getLDrawAgeHours(colorId: Int): Double = {
-    val path = getLDrawCachePath(colorId)
-    if (!Files.exists(path)) {
-      return Double.MaxValue
-    }
-    val lastModified = Files.getLastModifiedTime(path).toMillis
-    (System.currentTimeMillis() - lastModified).toDouble / (1000 * 60 * 60)
-  }
-
   def writeLDraw(colorId: Int, bytes: Array[Byte]): Unit = {
     ensureLDrawCacheDir()
     val path = getLDrawCachePath(colorId)
     Files.write(path, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
-  }
-
-  def deleteLDraw(colorId: Int): Unit = {
-    val path = getLDrawCachePath(colorId)
-    if (Files.exists(path)) {
-      Files.delete(path)
-    }
   }
 }

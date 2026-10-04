@@ -16,7 +16,8 @@ object PartsProcessor {
   case class ProcessedParts(parts: List[MatchedPart]) extends Response
 
   def apply(
-    taxonomyDataHolder: ActorRef[TaxonomyHolder.Command]
+    taxonomyDataHolder: ActorRef[TaxonomyHolder.Command],
+    lookupAsk: FiniteDuration = Timeouts.service.lookupAsk
   ): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val ec: ExecutionContext = context.executionContext
@@ -26,7 +27,7 @@ object PartsProcessor {
       Behaviors.receiveMessage {
         case ProcessParts(coloredParts, replyTo) =>
           logger.info(s"ProcessParts with ${coloredParts.size} input parts")
-          implicit val lookupTimeout: Timeout = Timeout(5.seconds)
+          implicit val lookupTimeout: Timeout = Timeout(lookupAsk)
 
           val requests = coloredParts.map(cp =>
             TaxonomyHolder.LookupPartRequest(cp.partNumber, cp.elementId, cp.name))

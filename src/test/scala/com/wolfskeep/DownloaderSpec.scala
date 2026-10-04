@@ -1,13 +1,14 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.wordspec.AnyWordSpecLike
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Route
-import org.scalatest.wordspec.AnyWordSpecLike
+
 import com.wolfskeep.Downloader.{Downloaded, Failed, NotChanged}
 
 import scala.concurrent.Await
@@ -15,7 +16,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 
 class DownloaderSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
-  "A Downloader" must {
+  "A Downloader" should {
     "return content when the server replies 200" in {
       // set up a small HTTP server
       val route: Route = path("hello") {

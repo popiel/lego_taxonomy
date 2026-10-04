@@ -2,10 +2,12 @@ package com.wolfskeep
 
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import org.slf4j.LoggerFactory
 import scala.collection.mutable
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 object TaxonomyParser {
+  private val log = LoggerFactory.getLogger(classOf[TaxonomyParser.type])
 
   def parseAltNumbers(html: String, partNumber: String): Set[String] = {
     val doc = Jsoup.parse(html)
@@ -88,7 +90,7 @@ object TaxonomyParser {
     val mainNumber = mainNumberOpt.getOrElse("1")
     val h1 = doc.selectFirst("div.main h1")
     val mainName = h1.ownText().trim()
-    println(s"Main category: $mainNumber - $mainName from URL $url")
+    log.debug(s"Main category: $mainNumber - $mainName from URL $url")
     val mainCat = Category(mainNumber, mainName, categoryParents.headOption)
     categories(mainNumber) = mainCat
     categoryParents = mainCat :: categoryParents

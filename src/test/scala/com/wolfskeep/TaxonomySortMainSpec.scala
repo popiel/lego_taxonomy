@@ -1,17 +1,16 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.wordspec.AnyWordSpecLike
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.Behaviors
-import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.matchers.should.Matchers
 
 import com.wolfskeep.rebrickable.{Data, RebrickableHolder}
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration._
 
-class TaxonomySortMainSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with Matchers {
+class TaxonomySortMainSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   private val basic = Category("1", "Basic", None)
 

@@ -18,6 +18,22 @@ class TimeoutsSpec extends AnyFlatSpec with Matchers {
     Timeouts.web.imageNegativeTtl should be > Duration.Zero
   }
 
+  "Timeouts.service" should "expose positive ask budgets" in {
+    Timeouts.service.lookupAsk should be > Duration.Zero
+    Timeouts.service.rebrickableAsk should be > Duration.Zero
+    Timeouts.service.bricksetAsk should be > Duration.Zero
+    Timeouts.service.imageAsk should be > Duration.Zero
+  }
+
+  it should "be covered by the web process budget" in {
+    Timeouts.web.processAsk should be > Timeouts.service.lookupAsk
+  }
+
+  "Timeouts.scheduled" should "expose positive budgets" in {
+    Timeouts.scheduled.rebrickableFetch should be > Duration.Zero
+    Timeouts.scheduled.batchProbe should be > Duration.Zero
+  }
+
   "Timeouts.Web" should "reject a server timeout that does not exceed the route budget" in {
     an[IllegalArgumentException] should be thrownBy {
       Timeouts.Web(
@@ -56,6 +72,26 @@ class TimeoutsSpec extends AnyFlatSpec with Matchers {
         imageWait = 500.millis,
         imageRetryAfter = 50.millis,
         imageNegativeTtl = Duration.Zero
+      )
+    }
+  }
+
+  "Timeouts.Service" should "reject a non-positive ask budget" in {
+    an[IllegalArgumentException] should be thrownBy {
+      Timeouts.Service(
+        lookupAsk = Duration.Zero,
+        rebrickableAsk = 1.second,
+        bricksetAsk = 90.seconds,
+        imageAsk = 3.seconds
+      )
+    }
+  }
+
+  "Timeouts.Scheduled" should "reject a non-positive budget" in {
+    an[IllegalArgumentException] should be thrownBy {
+      Timeouts.Scheduled(
+        rebrickableFetch = Duration.Zero,
+        batchProbe = 2.minutes
       )
     }
   }

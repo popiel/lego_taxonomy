@@ -40,7 +40,7 @@ object DiskCache {
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     // load cache from disk
-    val initialCache = loadCache()
+    val initialCache = loadCache(context.log)
     context.log.info(s"Loaded cache with ${initialCache.size} entries")
     running(initialCache)
   }
@@ -51,8 +51,7 @@ object DiskCache {
         val now = System.currentTimeMillis()
         val entry = CacheEntry(key, value, now)
         val newCache = cache + (key -> entry)
-        saveCache(entry)
-        // context.log.info(s"Inserted key: $key")
+        saveCache(context.log, entry)
         running(newCache)
 
       case Fetch(key, replyTo) =>
@@ -64,7 +63,7 @@ object DiskCache {
     }
   }
 
-  private def loadCache(): Map[String, CacheEntry] = {
+  private def loadCache(log: org.slf4j.Logger): Map[String, CacheEntry] = {
     if (!cacheDir.exists()) {
       Map.empty
     } else {
@@ -75,13 +74,16 @@ object DiskCache {
             .filter(_.getName.endsWith(".json"))
             .flatMap { file =>
               Try {
-                val content = Source.fromFile(file).mkString
-                val entry = content.parseJson.convertTo[CacheEntry]
-                entry.key -> entry
+                val source = Source.fromFile(file)
+                try {
+                  val content = source.mkString
+                  val entry = content.parseJson.convertTo[CacheEntry]
+                  entry.key -> entry
+                } finally source.close()
               } match {
                 case Success(pair) => Some(pair)
                 case Failure(ex) =>
-                  println(s"Failed to load ${file.getName}: ${ex.getMessage}")
+                  log.warn(s"Failed to load ${file.getName}: ${ex.getMessage}")
                   None
               }
             }
@@ -90,7 +92,7 @@ object DiskCache {
     }
   }
 
-  private def saveCache(entry: CacheEntry): Unit = {
+  private def saveCache(log: org.slf4j.Logger, entry: CacheEntry): Unit = {
     Try {
       if (!cacheDir.exists()) {
         cacheDir.mkdirs()
@@ -101,7 +103,7 @@ object DiskCache {
       writer.write(json)
       writer.close()
     } match {
-      case Failure(ex) => println(s"Failed to save cache for ${entry.key}: ${ex.getMessage}")
+      case Failure(ex) => log.warn(s"Failed to save cache for ${entry.key}: ${ex.getMessage}")
       case _ =>
     }
   }

@@ -70,24 +70,12 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       3.seconds
     )
 
-  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] = spawnActor(
-    Behaviors.receiveMessage[RebrickableHolder.Command] {
-      case RebrickableHolder.GetData(replyTo) =>
-        replyTo ! testData
-        Behaviors.same
-      case _ =>
-        Behaviors.same
-    },
-    "rebrickableDataActor"
-  )
+  val rebrickableDataActor: ActorRef[RebrickableHolder.Command] =
+    spawnActor(TestStubs.stubRebrickable(testData), "rebrickableDataActor")
 
   def fakeProcessor(legoPartFor: ColoredPart => Option[LegoPart]): ActorRef[PartsProcessor.Command] =
     spawnActor(
-      Behaviors.receiveMessage[PartsProcessor.Command] {
-        case PartsProcessor.ProcessParts(coloredParts, replyTo) =>
-          replyTo ! PartsProcessor.ProcessedParts(coloredParts.map(cp => MatchedPart(cp, legoPartFor(cp))))
-          Behaviors.same
-      },
+      TestStubs.fakeProcessor(legoPartFor),
       s"partsProcessor-${java.util.UUID.randomUUID()}"
     )
 
@@ -99,14 +87,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       ImageResolver.BricksetImageResolved(BricksetImageUrl)
   ): ActorRef[ImageResolver.Command] =
     spawnActor(
-      Behaviors.receiveMessage[ImageResolver.Command] {
-        case ImageResolver.GetLdrawImage(_, _, replyTo) =>
-          replyTo ! ldrawAnswer
-          Behaviors.same
-        case ImageResolver.GetBricksetImageUrl(_, _, replyTo) =>
-          replyTo ! bricksetAnswer
-          Behaviors.same
-      },
+      TestStubs.fakeImageResolver(ldrawAnswer, bricksetAnswer),
       s"imageResolver-${java.util.UUID.randomUUID()}"
     )
 
@@ -137,7 +118,7 @@ class HttpServerSpec extends AnyWordSpecLike with Matchers with ScalatestRouteTe
       )
     )
 
-  "HttpServer routes" must {
+  "HttpServer routes" should {
 
     "redirect root to parts-sorter" in {
       Get("/") ~> route ~> check {

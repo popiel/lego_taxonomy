@@ -2,15 +2,11 @@ package com.wolfskeep
 
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
-import com.typesafe.config.ConfigFactory
 import com.wolfskeep.rebrickable.{RebrickableHolder, RebrickableFetcherActor, RebrickableSchedulerActor, LDrawImageFetcher}
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext
 
 object TaxonomySortMain {
 
@@ -23,11 +19,7 @@ object TaxonomySortMain {
   }
 
   def runWebMode(): Unit = {
-    val config = ConfigFactory.parseString("""
-        akka.http.parsing.cookie-parsing-mode = raw
-      """).withFallback(ConfigFactory.load())
-
-    val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system", config)
+    val system: ActorSystem[TaxonomyFetcher.Command] = ActorSystem(TaxonomyFetcher(), "taxonomy-fetcher-system")
 
     val rebrickableData = system.systemActorOf(RebrickableHolder(), "rebrickable-data")
 
@@ -54,8 +46,7 @@ object TaxonomySortMain {
     import akka.stream.Materializer
     implicit val materializer: Materializer = Materializer(system)
 
-    val bindingFuture = HttpServer.start(partsProcessor, rebrickableData, imageResolver, system)
-
+    HttpServer.start(partsProcessor, rebrickableData, imageResolver, system)
     Await.result(system.whenTerminated, Duration.Inf)
     System.exit(0)
   }
@@ -67,10 +58,10 @@ object TaxonomySortMain {
     system ! TaxonomyFetcher.RegisterHolder(taxonomyDataHolder)
 
     import akka.actor.typed.scaladsl.AskPattern._
-    implicit val timeout: Timeout = Timeout(2.minutes)
+    implicit val timeout: Timeout = Timeout(Timeouts.scheduled.batchProbe)
     implicit val scheduler: akka.actor.typed.Scheduler = system.scheduler
 
-    Await.result(system.ask[TaxonomyFetcher.Response](replyTo => TaxonomyFetcher.GetTaxonomy(replyTo)), Duration("2 minutes")) match {
+    Await.result(system.ask[TaxonomyFetcher.Response](replyTo => TaxonomyFetcher.GetTaxonomy(replyTo)), timeout.duration) match {
       case TaxonomyFetcher.AugmentationComplete =>
         system.log.info("Taxonomy cycle complete, now processing inventories")
         processInventories(taxonomyDataHolder, args)

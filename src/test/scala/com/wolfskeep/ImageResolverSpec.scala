@@ -1,10 +1,10 @@
 package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.wordspec.AnyWordSpecLike
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.Behaviors
-import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.BeforeAndAfterAll
+
 import com.wolfskeep.rebrickable.LDrawImageFetcherTrait
 
 import java.util.concurrent.CountDownLatch
@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
-class ImageResolverSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with BeforeAndAfterAll {
+class ImageResolverSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   import ImageResolver._
 
@@ -39,7 +39,6 @@ class ImageResolverSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike w
       warmBytes = Some(readyBytes)
       true
     }
-    def hasImageInZip(colorId: Int, partNumber: String): Boolean = warmBytes.isDefined
     def getImageFromZip(colorId: Int, partNumber: String): Option[Array[Byte]] = warmBytes
     def isZipAvailable(colorId: Int): Boolean = zipWarm
     def canRetryDownload(colorId: Int): Boolean = allowDownload

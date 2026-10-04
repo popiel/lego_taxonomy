@@ -2,7 +2,6 @@ package com.wolfskeep
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.wordspec.AnyWordSpecLike
-import org.scalatest.matchers.should.Matchers
 
 import scala.io.Source
 import scala.concurrent.duration._
@@ -10,7 +9,7 @@ import scala.concurrent.duration._
 import akka.actor.typed.scaladsl.Behaviors
 import com.wolfskeep.rebrickable.RebrickableHolder
 
-class TaxonomyFetcherSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike with Matchers {
+class TaxonomyFetcherSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   private val rootHtml = Source.fromFile("src/test/resources/root.html").mkString
   private val category1Html = Source.fromFile("src/test/resources/category-1.html").mkString

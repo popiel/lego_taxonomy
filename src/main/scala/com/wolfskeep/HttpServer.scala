@@ -2,6 +2,7 @@ package com.wolfskeep
 
 import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
+import akka.actor.typed.DispatcherSelector
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.ConnectionContext
@@ -20,7 +21,7 @@ import scala.concurrent.duration._
 import akka.stream.scaladsl.StreamConverters
 import java.io.{BufferedInputStream, InputStreamReader}
 import java.net.URLEncoder
-import com.wolfskeep.rebrickable.{Color, Data, Element, InventoryPart, Part, RebrickableHolder}
+import com.wolfskeep.rebrickable.RebrickableHolder
 
 object HttpServer {
   val HttpPort = 37080
@@ -49,7 +50,14 @@ object HttpServer {
     implicit val system = classicSystem
 
     val httpBinding = Http().newServerAt("0.0.0.0", HttpPort).bind(route)
-    Http().newServerAt("0.0.0.0", HttpsPort).enableHttps(httpsConnectionContext).bind(route)
+    val httpsBinding = Http().newServerAt("0.0.0.0", HttpsPort).enableHttps(httpsConnectionContext).bind(route)
+
+    httpBinding.failed.foreach { ex =>
+      actorSystem.log.error("HTTP server failed to bind on port {}: {}", HttpPort, ex.getMessage)
+    }
+    httpsBinding.failed.foreach { ex =>
+      actorSystem.log.error("HTTPS server failed to bind on port {}: {}", HttpsPort, ex.getMessage)
+    }
 
     actorSystem.log.info(s"HTTP server started on port $HttpPort")
     actorSystem.log.info(s"HTTPS server started on port $HttpsPort")
@@ -64,11 +72,14 @@ object Routes {
     partsProcessor: ActorRef[PartsProcessor.Command],
     rebrickableDataActor: ActorRef[RebrickableHolder.Command],
     imageResolver: ActorRef[ImageResolver.Command],
-    timeouts: Timeouts.Web = Timeouts.web
+    timeouts: Timeouts.Web = Timeouts.web,
+    imageAsk: FiniteDuration = Timeouts.service.imageAsk
   )(implicit ec: ExecutionContext, materializer: Materializer): Route = {
     implicit val scheduler: akka.actor.typed.Scheduler = actorSystem.scheduler
     val classicScheduler: akka.actor.Scheduler = actorSystem.classicSystem.scheduler
-    val imageAskTimeout: Timeout = Timeout(3.seconds)
+    val imageAskTimeout: Timeout = Timeout(imageAsk)
+    val blockingEc: ExecutionContext =
+      actorSystem.dispatchers.lookup(DispatcherSelector.fromConfig("akka.actor.default-blocking-io-dispatcher"))
 
     def askLdrawImage(colorId: Int, partNumber: String): Future[ImageResolver.LdrawImageResponse] = {
       implicit val askTimeout: Timeout = imageAskTimeout
@@ -149,7 +160,7 @@ object Routes {
                         val partName = data.partNumToPart.get(e.partNum).map(_.name).getOrElse("")
                         e.elementId -> (e.partNum, colorName, partName)
                       }.toMap
-                      coloredParts <- processUploadedFile(byteSource, colorIdToName, elementIdToPartColor)
+                      coloredParts <- processUploadedFile(byteSource, colorIdToName, elementIdToPartColor, blockingEc)
                     } yield (coloredParts, data.colors.map(c => c.name -> c.id).toMap)
                   }
 
@@ -326,8 +337,9 @@ object Routes {
   private def processUploadedFile(
     byteSource: Source[ByteString, _],
     colorIdToName: Map[Int, String],
-    elementIdToPartColor: Map[Long, (String, String, String)]
-  )(implicit ec: ExecutionContext, materializer: Materializer): Future[List[ColoredPart]] = Future {
+    elementIdToPartColor: Map[Long, (String, String, String)],
+    blockingEc: ExecutionContext
+  )(implicit materializer: Materializer): Future[List[ColoredPart]] = Future {
     val inputStream = byteSource.runWith(StreamConverters.asInputStream())
     val bufferedStream = new BufferedInputStream(inputStream, 8192)
     bufferedStream.mark(8192)
@@ -342,7 +354,7 @@ object Routes {
     } finally {
       inputStream.close()
     }
-  }
+  }(blockingEc)
 
   def resolveColorId(color: String, colorNameToId: Map[String, Int]): Option[Int] =
     colorNameToId.get(color).orElse {
